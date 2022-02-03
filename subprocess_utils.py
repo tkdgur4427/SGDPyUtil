@@ -1,8 +1,8 @@
 import queue
 import threading
 
-from utils.singleton_utils import SingletonInstance
-from utils.logging_utils import Logger
+from SGDPyUtil.singleton_utils import SingletonInstance
+from SGDPyUtil.logging_utils import Logger
 
 
 class ProcessItem:

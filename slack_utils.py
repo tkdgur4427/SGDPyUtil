@@ -1,5 +1,5 @@
 import requests
-from utils.singleton_utils import SingletonInstance
+from SGDPyUtil.singleton_utils import SingletonInstance
 
 
 class Slack(SingletonInstance):

@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 
 # logging
-from utils.logging_utils import Logger
+from SGDPyUtil.logging_utils import Logger
 
 
 def execute_program(file_path, arg_cmd=""):
@@ -234,5 +234,18 @@ def execute_powershell_script(inline_powershell_script: PowershellInlineScript):
 
     # This makes the wait possible
     script_process.wait()
+
+    return
+
+
+def execute_powershell_content(content: str, run_as_admin: bool = False):
+
+    script = PowershellInlineScript()
+    script.add_command(content)
+    if run_as_admin:
+        script.add_run_as_admin()
+
+    # execute powershell script
+    execute_powershell_script(script)
 
     return

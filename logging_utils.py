@@ -4,8 +4,8 @@ import traceback
 import logging
 import logging.config
 
-from utils.singleton_utils import SingletonInstance
-from utils.main import get_data_path
+from SGDPyUtil.singleton_utils import SingletonInstance
+from SGDPyUtil.main import get_data_path
 
 is_kiwoom_process = False
 
@@ -41,7 +41,9 @@ class Logger(SingletonInstance):
     def init_settings(self, log_type):
         try:
             # get the logging config file
-            conf_path = os.path.join(get_data_path(), "utils", ".conf", "logging.conf")
+            conf_path = os.path.join(
+                get_data_path(), "SGDPyUtil", ".conf", "logging.conf"
+            )
 
             # only enable file logging when log03 type is specified
             if log_type == "log03":

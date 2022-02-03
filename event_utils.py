@@ -3,10 +3,10 @@ from queue import Queue
 from threading import Event
 
 # logging
-from utils.logging_utils import Logger
+from SGDPyUtil.logging_utils import Logger
 
 # function
-from utils.function_utils import FunctionObject
+from SGDPyUtil.function_utils import FunctionObject
 
 
 class EventCommand:

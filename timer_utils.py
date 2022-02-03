@@ -1,8 +1,8 @@
 import time
 from enum import Enum
 
-from utils.logging_utils import Logger
-from utils.function_utils import FunctionObject
+from SGDPyUtil.logging_utils import Logger
+from SGDPyUtil.function_utils import FunctionObject
 
 
 class TimerItem:
@@ -38,7 +38,7 @@ class SequenceItem:
     def __init__(self, name, function: FunctionObject, once=False):
         self.name = name
         self.function = function
-        
+
         # whether we call this sequence item once and remove item from sequence timer
         self.once = once
         return
@@ -122,11 +122,11 @@ class TimerSequenceItem(TimerItem):
 
                 # find function to execute
                 name = self.item_names[index_to_execute]
-                
+
                 # sequence item to execute
                 sequence_item = self.items[name]
                 sequence_item.function.call()
-                
+
                 # if sequence item is removed after execution, remove item
                 if sequence_item.once:
                     self.remove_sequence_item(name)
@@ -153,7 +153,7 @@ class PendingTimerItem:
         self.timer_or_name = timer_or_name
         self.type = type
         self.callback_func = callback
-        
+
     def callback(self):
         if self.callback_func != None:
             self.callback_func.call()
