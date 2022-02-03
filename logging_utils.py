@@ -47,7 +47,7 @@ class Logger(SingletonInstance):
 
             # only enable file logging when log03 type is specified
             if log_type == "log03":
-                logging_file_name = "SGDTradeFramework.log"
+                logging_file_name = "SGDLog.log"
                 logging.config.fileConfig(
                     conf_path,
                     disable_existing_loggers=False,

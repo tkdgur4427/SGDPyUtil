@@ -5,12 +5,25 @@ import tempfile
 # logging
 from SGDPyUtil.logging_utils import Logger
 
-
 def execute_program(file_path, arg_cmd=""):
     cmd = file_path + arg_cmd
     command_line = '"{0}"'.format(cmd)
     os.system(command_line)
     return
+
+
+def execute_command(command, print_command: bool = False, quiet: bool = False):
+    out = None
+    err = None
+    
+    if quiet:
+        out = open(os.devnull, "w")
+        err = subprocess.STDOUT
+    
+    if print_command:
+        Logger.instance().info(f">>> f{command}")
+    
+    return subprocess.call(command, shell=True, stdout=out, stderr=err)
 
 
 def execute_powershell_cmd(script_path, args, in_shell=True):
