@@ -773,6 +773,18 @@ class FastBuild(SingletonInstance):
         self.dump()
         return
 
+    def get_output_path(self, build_conf: BuildConf):
+        output_path_postfix = "Debug"
+        if build_conf is BuildConf.PROFILE:
+            output_path_postfix = "Profile"
+        elif build_conf is BuildConf.RELEASE:
+            output_path_postfix = "Release"
+
+        output_path = os.path.join(
+            self.output_path, f"Windows-x64-MSVC16-{output_path_postfix}"
+        )
+        return output_path
+
     def add_text(self, text: str):
         self.bff_file.write(text)
         return
