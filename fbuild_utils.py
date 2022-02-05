@@ -2,6 +2,7 @@ import os
 import winreg
 import importlib
 
+from enum import Enum
 from typing import List
 from typing import Dict
 
@@ -53,6 +54,12 @@ class FBModule:
         return
 
 
+class BuildConf(Enum):
+    DEBUG = 1
+    PROFILE = 2
+    RELEASE = 3
+
+
 class FastBuild(SingletonInstance):
     def __init__(self):
         # get environments variables
@@ -96,7 +103,7 @@ class FastBuild(SingletonInstance):
 
         # set global variables
         self.add_text(f".OutputPath = '{self.output_path}'\n")
-        self.add_text(f".IntermeidatePath = '{self.intermediate_path}'\n\n")
+        self.add_text(f".IntermediatePath = '{self.intermediate_path}'\n\n")
 
         # setup registry keys
         self.setup_registry_keys()
@@ -210,7 +217,7 @@ class FastBuild(SingletonInstance):
         version_dirs = []
         for version_dir in os.listdir(sdk_include_dir):
             version_path = os.path.join(sdk_include_dir, version_dir)
-            sdk_version = os.path.splitext(os.path.basename(version_path))[0]
+            sdk_version = version_dir
             if self.sdk_version != None and self.sdk_version > sdk_version:
                 continue
 
@@ -299,17 +306,17 @@ class FastBuild(SingletonInstance):
 
         # start ExtraFiles
         self.add_text("\t.ExtraFiles =\n\t{\n")
-        self.add_text("\t\t'$Root$/c1.dll\n")
-        self.add_text("\t\t'$Root$/c2.dll\n")
-        self.add_text("\t\t'$Root$/clxx.dll\n")
-        self.add_text("\t\t'$Root$/1033/clui.dll\n")
-        self.add_text("\t\t'$Root$/mspdbsrv.exe\n")
-        self.add_text("\t\t'$Root$/mspdbcore.dll\n")
-        self.add_text("\t\t'$Root$/mspft140.dll\n")
-        self.add_text("\t\t'$Root$/msobj140.dll\n")
-        self.add_text("\t\t'$Root$/mspdb140.dll\n")
-        self.add_text("\t\t'$Root$/msvcp140.dll\n")
-        self.add_text("\t\t'$Root$/tbbmalloc.dll\n")
+        self.add_text("\t\t'$Root$/c1.dll'\n")
+        self.add_text("\t\t'$Root$/c2.dll'\n")
+        self.add_text("\t\t'$Root$/c1xx.dll'\n")
+        self.add_text("\t\t'$Root$/1033/clui.dll'\n")
+        self.add_text("\t\t'$Root$/mspdbsrv.exe'\n")
+        self.add_text("\t\t'$Root$/mspdbcore.dll'\n")
+        self.add_text("\t\t'$Root$/mspft140.dll'\n")
+        self.add_text("\t\t'$Root$/msobj140.dll'\n")
+        self.add_text("\t\t'$Root$/mspdb140.dll'\n")
+        self.add_text("\t\t'$Root$/msvcp140.dll'\n")
+        self.add_text("\t\t'$Root$/tbbmalloc.dll'\n")
 
         # get redist directory to find additional dll
         vs_redist_path = os.path.join(vs_default_path, "VC", "Redist", "MSVC")
@@ -395,7 +402,7 @@ class FastBuild(SingletonInstance):
         )  # surpress the display of the copyright banner
         self.add_text("\t\t + ' /c'\n")  # compiles without linking
         self.add_text("\t\t + ' /W4'\n")  # warning level 4
-        self.add_text("\t\t + ' /Wall'\n")  # display all warning
+        # self.add_text("\t\t + ' /Wall'\n")  # display all warning
         # self.add_text("\t\t + ' /WX'\n")                # treat warning as error
         # self.add_text("\t\t + ' /TP'\n")                # compile as C++
         self.add_text(
@@ -404,7 +411,7 @@ class FastBuild(SingletonInstance):
         self.add_text(
             "\t\t + ' /Zc:strictStrings'\n"
         )  # require const only usage of string literals (VS2013+)
-        self.add_text("\t\t + .AdditionalWarnings'\n")  # see above
+        self.add_text("\t\t + .AdditionalWarnings\n")  # see above
         self.add_text("\t\t + ' /fp:fast'\n")  # specifies floating-point behavior
         self.add_text("\t\t + ' /D\"WIN32_LEAN_AND_MEAN\" /D_WIN32 /D__WINDOWS__'\n")
         self.add_text(
@@ -413,11 +420,11 @@ class FastBuild(SingletonInstance):
         self.add_text(
             "\t\t + ' /D\"_WINSOCK_DEPRECATED_NO_WARNINGS\"'\n"
         )  # dont warn about deprecated winsock functions
-        self.add_text("\t\t + ' /Fo\"%2\"'\n")
         # .PCHOptions
         self.add_text(
             "\t.PCHOptions = '' + .CompilerOptions + ' /Fp\"%2\" /Fo\"%3\"'\n"
         )
+        self.add_text("\t.CompilerOptions + ' /Fo\"%2\"'\n")
         # .LibrarianOptions
         self.add_text("\t.LibrarianOptions = ''\n")
         self.add_text("\t\t + ' /NODEFAULTLIB'\n")  # ignores all default libraries
@@ -470,18 +477,18 @@ class FastBuild(SingletonInstance):
         self.add_text("\t.LibrarianDebugOptimizations = ''\n")
         # .LibrarianReleaseOptimizations
         self.add_text(
-            "\t.LibrarianReleaseOptimizations = '/LTCG'\n"
+            "\t.LibrarianReleaseOptimizations = ' /LTCG'\n"
         )  # specifies link-time code generation
         # .LinkerDebugOptimizations
         self.add_text("\t.LinkerDebugOptimizations = ''\n")
         # .LinkerReleaseOptimizations
         self.add_text(
-            "\t.LinkerReleaseOptimizations = '/LTCG'\n"
+            "\t.LinkerReleaseOptimizations = ' /LTCG'\n"
         )  # specifies link-time code generation
         self.add_text("\t\t + ' /OPT:REF,ICF'\n")
 
         # .BaseIncludePaths
-        self.add_text("\t.BaseIncludePaths = '/I\".\"'\n")
+        self.add_text("\t.BaseIncludePaths = ' /I\".\"'\n")
         include_paths = self.get_base_include_paths(tool_chain_dir)
         for include_path in include_paths:
             self.add_text(f"\t\t + ' /I\"{include_path}\"'\n")
@@ -497,14 +504,14 @@ class FastBuild(SingletonInstance):
             "Lib",
             self.sdk_version,  # drived by self.get_base_include_paths()
         )
-        self.add_text(f"\t.WindowsLibPath = {sdk_lib_dir}\n")
+        self.add_text(f"\t.WindowsLibPath = '{sdk_lib_dir}'\n")
         self.add_text("]\n")
 
         """ .MSVC16x64_BaseConfig """
         # x64 base config
         self.add_text(".MSVC16x64_BaseConfig = [\n")
         self.add_text("\tUsing(.MSVC16_BaseConfig)\n")
-        self.add_text(f"\t.ToolsBasePath = {tool_chain_dir_bin}\n")
+        self.add_text(f"\t.ToolsBasePath = '{tool_chain_dir_bin}'\n")
         self.add_text("\t.PlatformInfo = 'Windows'\n")
         self.add_text("\t.ArchInfo = 'x64'\n")
         self.add_text("\t.CompilerInfo = 'MSVC16'\n")
@@ -530,7 +537,7 @@ class FastBuild(SingletonInstance):
         self.add_text("\t.Config = 'Debug'\n")
         self.add_text("\t.CompilerOptions + ' /DDEBUG /D_DEBUG /DPROFILING_ENABLED'\n")
         self.add_text("\t\t + .CompilerDebugOptimizations\n")
-        self.add_text("\t.PCHOptions + ' /DDEBUG /D_DEBUG /DPROFILING_ENABLED\n")
+        self.add_text("\t.PCHOptions + ' /DDEBUG /D_DEBUG /DPROFILING_ENABLED'\n")
         self.add_text("\t\t + .CompilerDebugOptimizations\n")
         self.add_text("\t.LibrarianOptions + .LibrarianDebugOptimizations\n")
         self.add_text("\t.LinkerOptions + .LinkerDebugOptimizations\n")
@@ -587,7 +594,7 @@ class FastBuild(SingletonInstance):
         self.add_text("\t\t.UnityInputPath = '$ProjectPath$\\src'\n")
         self.add_text("\t\t.UnityInputPattern = {'*.cpp'}\n")
         self.add_text(
-            "\t\t.UnityOutputPath = '$IntermediatePath$\\Unity\\$ProjectPath$\\'\n"
+            "\t\t.UnityOutputPath = '$IntermediatePath$\\Unity\\$ProjectName$\\'\n"
         )
         self.add_text("\t\tUnity('$ProjectName$-Unity'){}\n")
         self.add_text("\t}\n\n")
@@ -595,6 +602,9 @@ class FastBuild(SingletonInstance):
         self.add_text("\t\tUsing(.Config)\n")
         self.add_text(
             "\t\t.OutputPath + '\\$PlatformInfo$-$ArchInfo$-$CompilerInfo$-$Config$\\'\n"
+        )
+        self.add_text(
+            "\t\t.IntermediatePath + '\\$PlatformInfo$-$ArchInfo$-$CompilerInfo$-$Config$\\'\n"
         )
 
         """ Library() """
@@ -640,7 +650,7 @@ class FastBuild(SingletonInstance):
         self.add_text("\t\t.UnityInputPath = '$ProjectPath$\\src'\n")
         self.add_text("\t\t.UnityInputPattern = {'*.cpp'}\n")
         self.add_text(
-            "\t\t.UnityOutputPath = '$IntermediatePath$\\Unity\\$ProjectPath$\\'\n"
+            "\t\t.UnityOutputPath = '$IntermediatePath$\\Unity\\$ProjectName$\\'\n"
         )
         self.add_text("\t\tUnity('$ProjectName$-Unity'){}\n")
         self.add_text("\t}\n\n")
@@ -650,6 +660,9 @@ class FastBuild(SingletonInstance):
         self.add_text("\t\t\t + ' /wd4710' // function not inlined \n")
         self.add_text(
             "\t\t.OutputPath + '\\$PlatformInfo$-$ArchInfo$-$CompilerInfo$-$Config$\\'\n"
+        )
+        self.add_text(
+            "\t\t.IntermediatePath + '\\$PlatformInfo$-$ArchInfo$-$CompilerInfo$-$Config$\\'\n"
         )
 
         """ ObjectList """
@@ -708,13 +721,53 @@ class FastBuild(SingletonInstance):
 
         return
 
-    def generate_bff_file(self):
+    def finalize_alias(self, build_conf: BuildConf):
+        """ForEach All Alias"""
+        self.add_text("ForEach(.Config in .Configs_Windows_MSVC16) {\n")
+        self.add_text("\tUsing(.Config)\n")
+        self.add_text(
+            "\tAlias('All-$PlatformInfo$-$ArchInfo$-$CompilerInfo$-$Config$') {\n"
+        )
+        self.add_text("\t\t.Targets = {\n")
+
+        module_contents = []
+        for name, module in self.modules.items():
+            module_contents.append(
+                f"\t\t\t'{name}-$PlatformInfo$-$ArchInfo$-$CompilerInfo$-$Config$'"
+            )
+        self.add_text(",\n".join(module_contents))
+        self.add_text("\n")
+
+        self.add_text("\t\t}\n")
+        self.add_text("\t}\n")
+        self.add_text("}\n")
+
+        # by default, BuildConf.DEBUG
+        build_configuration = "\t\t'All-Windows-x64-MSVC16-Debug'\n"
+        if build_conf == BuildConf.PROFILE:
+            build_configuration = "\t\t'All-Windows-x64-MSVC16-Profile'\n"
+        elif build_conf == BuildConf.RELEASE:
+            build_configuration = "\t\t'All-Windows-x64-MSVC16-Release'\n"
+
+        """ All Alias"""
+        self.add_text("Alias('All') {\n")
+        self.add_text("\t.Targets = {\n")
+        self.add_text(build_configuration)
+        self.add_text("\t}\n")
+        self.add_text("}\n")
+
+        return
+
+    def generate_bff_file(self, build_conf: BuildConf):
         # looping module generate
         for name, module in self.modules.items():
             if not module.is_executable:
                 self.add_lib_module_bff(module)
             if module.is_executable:
                 self.add_exe_module_bff(module)
+
+        # Alias('All')
+        self.finalize_alias(build_conf)
 
         # dump the bff file (fbuild.bff)
         self.dump()
