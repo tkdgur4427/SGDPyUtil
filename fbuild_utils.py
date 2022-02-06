@@ -6,6 +6,8 @@ from enum import Enum
 from typing import List
 from typing import Dict
 
+from SGDPyUtil.winreg_utils import *
+from SGDPyUtil.visual_studio_utils import *
 from SGDPyUtil.logging_utils import Logger
 from SGDPyUtil.singleton_utils import SingletonInstance
 
@@ -105,9 +107,6 @@ class FastBuild(SingletonInstance):
         self.add_text(f".OutputPath = '{self.output_path}'\n")
         self.add_text(f".IntermediatePath = '{self.intermediate_path}'\n\n")
 
-        # setup registry keys
-        self.setup_registry_keys()
-
         # cache sdk_root
         self.cache_sdk_root()
 
@@ -141,57 +140,16 @@ class FastBuild(SingletonInstance):
             info.import_as_py_module()
         return
 
-    def setup_registry_keys(self):
-        self.registry_keys = []
-        self.registry_keys.append((winreg.HKEY_CURRENT_USER, "SOFTWARE\%s"))
-        self.registry_keys.append((winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\%s"))
-        self.registry_keys.append((winreg.HKEY_CURRENT_USER, "SOFTWARE\WOW6432Node\%s"))
-        self.registry_keys.append(
-            (winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\WOW6432Node\%s")
-        )
-        return
-
-    def try_read_registry_key(
-        self, sub_key: str, value_name: str = None, value=None
-    ) -> bool:
-        is_matched_key_found = False
-        for registry_key in self.registry_keys:
-            key = registry_key[0]
-            sub_key_root = registry_key[1]
-            try:
-                combined_sub_key = sub_key_root % sub_key
-                opened_key = winreg.OpenKey(key, combined_sub_key)
-                if value_name != None and len(value) == 1:
-                    value[0] = winreg.QueryValueEx(opened_key, value_name)[0]
-                # key is found
-                is_matched_key_found = True
-            except:
-                pass
-        return is_matched_key_found
-
-    def get_visual_studio_version(self) -> str:
-        common_key_path = "\Microsoft\VisualStudio\%s"
-        possible_vs_versions = [
-            "16.0",  # visual studio 2019
-        ]
-        installed_vs_versions = []
-        for version in possible_vs_versions:
-            key_suffix = common_key_path % version
-            if self.try_read_registry_key(key_suffix):
-                installed_vs_versions.append(version)
-
-        return installed_vs_versions[0] if len(installed_vs_versions) else None
-
     def cache_sdk_root(self):
         sdk_root_dir_ref = [
             "",
         ]
-        self.try_read_registry_key(
+        try_read_registry_key(
             "Microsoft\\Windows Kits\\Installed Roots", "KitsRoot10", sdk_root_dir_ref
         )
 
         if sdk_root_dir_ref[0] == "":
-            self.try_read_registry_key(
+            try_read_registry_key(
                 "Microsoft\\Microsoft SDKs\\Windows\\v10.0",
                 "InstallationFolder",
                 sdk_root_dir_ref,
@@ -260,22 +218,14 @@ class FastBuild(SingletonInstance):
             Compiler 
         """
 
-        # write fbuild's Compiler syntax
-        vs_ver_mapper = {
-            "16.0": "2019",
-        }
-
         # get the vs version
-        vs_version = self.get_visual_studio_version()
+        vs_version = get_visual_studio_version()
         if vs_version == None:
             Logger.instance().info(f"[ERROR] visual studio is NOT valid")
             return False
 
         # get the vs install path
-        vs_version = vs_ver_mapper.get(vs_version, None)
-        vs_default_path = (
-            f"C:\Program Files (x86)\Microsoft Visual Studio\{vs_version}\Professional"
-        )
+        vs_default_path = get_visual_studio_path(vs_version)
         vs_install_path = os.path.join(vs_default_path, "VC", "Tools", "MSVC")
         if not os.path.isdir(vs_install_path):
             Logger.instance().info(f"[ERROR] visual studio is NOT valid")

@@ -1,5 +1,6 @@
 import sys
 import os
+import shutil
 
 import SGDPyUtil.powershell_utils as powershell_utils
 
@@ -105,3 +106,13 @@ copy "{python_path}" "{new_python_path}";
     powershell_utils.execute_powershell_script(env_settings_powershell)
 
     return python_command
+
+
+def copytree(src, dst, symlinks=False, ignore=None):
+    for item in os.listdir(src):
+        s = os.path.join(src, item)
+        d = os.path.join(dst, item)
+        if os.path.isdir(s):
+            shutil.copytree(s, d, symlinks, ignore)
+        else:
+            shutil.copy2(s, d)

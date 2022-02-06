@@ -14,6 +14,8 @@ import traceback
 from SGDPyUtil.singleton_utils import SingletonInstance
 from SGDPyUtil.logging_utils import Logger
 from SGDPyUtil.powershell_utils import execute_command
+from SGDPyUtil.visual_studio_utils import *
+from SGDPyUtil.main import *
 
 try:
     from urllib.request import urlparse
@@ -326,6 +328,66 @@ def download_and_extract_file(
         target_filename,
         os.path.join(BootstrapGlobal.instance().SRC_DIR, target_dir_name),
     )
+    return
+
+
+def generate_lib_by_cmake(repo_path: str, src_folder_name: str):
+    # create dst_path
+    dst_path = os.path.join(repo_path, "lib")
+    if not os.path.isdir(dst_path):
+        os.mkdir(dst_path)
+
+    # check whether we already create .lib by checking .build.lib.success.txt's existance
+    verify_mark_file_path = os.path.join(dst_path, ".build.lib.success.txt")
+    if os.path.exists(verify_mark_file_path):
+        return
+
+    # generate build folder (visual studio project file generation)
+    cmake_cmd = "cmake"
+    cmake_cmd = f"{cmake_cmd} -S . -B build"
+    execute_command(cmake_cmd, True, repo_path)
+
+    # get ALL_BUILD.vxcproj path
+    build_path = os.path.join(repo_path, "build")
+    vcxproj_path = os.path.join(build_path, "ALL_BUILD.vcxproj")
+
+    # get msbuild path
+    msbuild_path = get_msbuild_path(get_visual_studio_version())
+    build_cmd = "msbuild"
+
+    # build .vcxproj files
+    build_cmd_debug = f"{build_cmd} {vcxproj_path} /p:configuration=Debug"
+    build_cmd_release = f"{build_cmd} {vcxproj_path} /p:configuration=Release"
+
+    execute_command(build_cmd_debug, True, msbuild_path)
+    execute_command(build_cmd_release, True, msbuild_path)
+
+    # move generated .lib to folder lib
+    lib_path = os.path.join(build_path, src_folder_name)
+    lib_debug_path = os.path.join(lib_path, "Debug")
+    lib_release_path = os.path.join(lib_path, "Release")
+
+    # process Debug
+    dst_debug_path = os.path.join(dst_path, "Debug")
+    if not os.path.isdir(dst_debug_path):
+        os.mkdir(dst_debug_path)
+    copytree(lib_debug_path, dst_debug_path)
+
+    # process Release
+    dst_release_path = os.path.join(dst_path, "Release")
+    if not os.path.isdir(dst_release_path):
+        os.mkdir(dst_release_path)
+    copytree(lib_release_path, dst_release_path)
+
+    # delete build folder
+    shutil.rmtree(build_path)
+
+    # mark lib build success by file
+    mark_file_path = os.path.join(dst_path, ".build.lib.success.txt")
+    # generate mark file
+    with open(mark_file_path, "w") as mark_file:
+        pass
+
     return
 
 
@@ -642,6 +704,9 @@ def bootstrap_main(cwd: str, argv):
         name = library.get("name", None)
         source = library.get("source", None)
 
+        # get the src folder name
+        src = source.get("src", "src")
+
         if (skip_libs) and (name in skip_libs):
             continue
 
@@ -822,6 +887,9 @@ def bootstrap_main(cwd: str, argv):
                             raise RuntimeError
                         clone_repository(src_type, src_url, name, revision)
 
+                        # build library
+                        generate_lib_by_cmake(lib_dir, src)
+
                         if create_repo_snapshots:
                             Logger.instance().info(
                                 f"[LOG] creating snapshot of library repository {name}"
@@ -868,6 +936,9 @@ def bootstrap_main(cwd: str, argv):
 
                             # reset repository state to particular revision (only using local operations inside the function)
                             clone_repository(src_type, src_url, name, revision, True)
+
+                            # build library
+                            generate_lib_by_cmake(lib_dir, src)
                         else:
                             raise
 
