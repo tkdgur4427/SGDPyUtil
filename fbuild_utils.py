@@ -1,5 +1,4 @@
 import os
-import winreg
 import importlib
 
 from enum import Enum
@@ -10,6 +9,7 @@ from SGDPyUtil.winreg_utils import *
 from SGDPyUtil.visual_studio_utils import *
 from SGDPyUtil.logging_utils import Logger
 from SGDPyUtil.singleton_utils import SingletonInstance
+from SGDPyUtil.json_utils import *
 
 
 class ModuleInfo:
@@ -42,17 +42,29 @@ class FBModule:
         # module name
         self.name = module_name
         # module path
-        self.path = module_path
+        self.src_path = module_path
         # module dir
-        self.dir = os.path.dirname(self.path)
+        self.dir = os.path.dirname(self.src_path)
         # whether module is targetting library or executable
         self.is_executable = is_executable
         # dependent modules
         self.dependent_module_names: List[str] = []
+        # additional include
+        self.additional_include_paths: List[str] = []
+        # additional src
+        self.additional_src_paths: List[str] = []
         return
 
     def add_dependency(self, module_name: str):
         self.dependent_module_names.append(module_name)
+        return
+
+    def add_include_path(self, include_path: str):
+        self.additional_include_paths.append(include_path)
+        return
+
+    def add_src_path(self, src_path: str):
+        self.additional_src_paths.append(src_path)
         return
 
 
@@ -72,6 +84,12 @@ class FastBuild(SingletonInstance):
 
         # modules to compile
         self.modules: Dict[str, FBModule] = {}
+
+        # third_libraries
+        self.third_library_include_paths: List[str] = []
+        self.third_library_lib_paths: List[str] = []
+        self.debug_library_names: List[str] = []
+        self.release_library_names: List[str] = []
 
         return
 
@@ -204,6 +222,71 @@ class FastBuild(SingletonInstance):
         base_include_paths.append(lsgd_path)
 
         return base_include_paths
+
+    def setup_third_libraries(self, third_library_path: str):
+        # get src path
+        src_path = os.path.join(third_library_path, "src")
+
+        # list third libraries
+        self.third_library_paths = []
+        for dir in os.listdir(src_path):
+            self.third_library_paths.append(os.path.join(src_path, dir))
+
+        # extract include/lib paths
+        self.third_library_include_paths: List[str] = []
+        self.third_library_lib_paths: List[str] = []
+
+        # extract .lib names
+        self.debug_library_names = []
+        self.release_library_names = []
+
+        # search any deps.json
+        deps_file_path = os.path.join(src_path, "deps.json")
+        if os.path.exists(deps_file_path):
+            deps = read_json_data(deps_file_path)
+
+            deps_paths = deps.get("paths", None)
+            if not deps_paths is None:
+                for deps_path in deps_paths:
+                    self.third_library_lib_paths.append(deps_path)
+
+            deps_libs = deps.get("libs", None)
+            if not deps_libs is None:
+                for deps_lib in deps_libs:
+                    self.debug_library_names.append(deps_lib)
+                    self.release_library_names.append(deps_lib)
+
+        for dir in self.third_library_paths:
+            include_path = os.path.join(dir, "include")
+            library_path = os.path.join(dir, "lib")
+
+            # add include path
+            if os.path.isdir(include_path):
+                self.third_library_include_paths.append(include_path)
+
+            # Debug library
+            debug_library_path = os.path.join(library_path, "Debug")
+            if os.path.isdir(debug_library_path):
+                self.third_library_lib_paths.append(debug_library_path)
+
+                for root, _, files in os.walk(debug_library_path):
+                    for file in files:
+                        ext = os.path.splitext(file)[1]
+                        if ext == ".lib":
+                            self.debug_library_names.append(file)
+
+            # Release library
+            release_library_path = os.path.join(library_path, "Release")
+            if os.path.isdir(release_library_path):
+                self.third_library_lib_paths.append(release_library_path)
+
+                for root, _, files in os.walk(release_library_path):
+                    for file in files:
+                        ext = os.path.splitext(file)[1]
+                        if ext == ".lib":
+                            self.release_library_names.append(file)
+
+        return
 
     def write_env_setup(self) -> bool:
         """
@@ -443,6 +526,10 @@ class FastBuild(SingletonInstance):
         for include_path in include_paths:
             self.add_text(f"\t\t + ' /I\"{include_path}\"'\n")
 
+        # add third library include path
+        for third_library_include_path in self.third_library_include_paths:
+            self.add_text(f"\t\t + ' /I\"{third_library_include_path}\"'\n")
+
         # .CompilerOptions
         self.add_text("\t.CompilerOptions + .BaseIncludePaths\n")
         # .PCHOptions
@@ -478,6 +565,10 @@ class FastBuild(SingletonInstance):
         tool_chain_dir_lib = os.path.join(tool_chain_dir, "lib", "x64")
         self.add_text(f"\t\t + ' /LIBPATH:\"{tool_chain_dir_lib}\"'\n")
 
+        # add third library lib paths
+        for third_library_lib_path in self.third_library_lib_paths:
+            self.add_text(f"\t\t + ' /LIBPATH:\"{third_library_lib_path}\"'\n")
+
         self.add_text("]\n")
 
         """ .MSVC16x64_DebugConfig """
@@ -494,6 +585,11 @@ class FastBuild(SingletonInstance):
         self.add_text(
             "\t\t + ' libcmtd.lib libucrtd.lib libvcruntimed.lib kernel32.lib'\n"
         )
+
+        # join third_library's library name
+        debug_lib_list = " ".join(self.debug_library_names)
+        self.add_text(f"\t\t + ' {debug_lib_list}'\n")
+
         self.add_text("]\n")
 
         """ .MSVC16x64_ReleaseConfig """
@@ -515,6 +611,11 @@ class FastBuild(SingletonInstance):
         self.add_text(
             "\t\t + ' libcmt.lib libucrt.lib libvcruntime.lib kernel32.lib'\n"
         )
+
+        # join third_library's library name
+        release_lib_list = " ".join(self.release_library_names)
+        self.add_text(f"\t\t + ' {release_lib_list}'\n")
+
         self.add_text("]\n")
 
         """ .MSVC16x64_ProfileConfig """
@@ -541,8 +642,18 @@ class FastBuild(SingletonInstance):
         self.add_text(f"\t.ProjectName = '{module.name}'\n")
         self.add_text(f"\t.ProjectPath = '{module.dir}'\n")
         self.add_text("\t{\n")
-        self.add_text("\t\t.UnityInputPath = '$ProjectPath$\\src'\n")
-        self.add_text("\t\t.UnityInputPattern = {'*.cpp'}\n")
+        self.add_text("\t\t.UnityInputPath = {\n")
+
+        # add default src path
+        self.add_text(f"\t\t\t'{module.src_path}'\n")
+
+        # add additional src paths
+        for src_path in module.additional_src_paths:
+            self.add_text(f"\t\t\t'{src_path}',\n")
+
+        self.add_text("\t\t}\n")
+
+        self.add_text("\t\t.UnityInputPattern = {'*.cpp', '*.c'}\n")
         self.add_text(
             "\t\t.UnityOutputPath = '$IntermediatePath$\\Unity\\$ProjectName$\\'\n"
         )
@@ -556,6 +667,12 @@ class FastBuild(SingletonInstance):
         self.add_text(
             "\t\t.IntermediatePath + '\\$PlatformInfo$-$ArchInfo$-$CompilerInfo$-$Config$\\'\n"
         )
+
+        # additonal includes
+        if len(module.additional_include_paths) > 0:
+            self.add_text("\t\t.CompilerOptions \n")
+            for include_path in module.additional_include_paths:
+                self.add_text(f"\t\t + ' /I\"{include_path}\"'\n")
 
         """ Library() """
         self.add_text(
@@ -597,7 +714,16 @@ class FastBuild(SingletonInstance):
         self.add_text(f"\t.ProjectName = '{module.name}'\n")
         self.add_text(f"\t.ProjectPath = '{module.dir}'\n")
         self.add_text("\t{\n")
-        self.add_text("\t\t.UnityInputPath = '$ProjectPath$\\src'\n")
+        self.add_text("\t\t.UnityInputPath = {\n")
+
+        # add default src path
+        self.add_text(f"\t\t\t'{module.src_path}'\n")
+
+        # add additional src paths
+        for src_path in module.additional_src_paths:
+            self.add_text(f"\t\t\t'{src_path}',\n")
+
+        self.add_text("\t\t}\n")
         self.add_text("\t\t.UnityInputPattern = {'*.cpp'}\n")
         self.add_text(
             "\t\t.UnityOutputPath = '$IntermediatePath$\\Unity\\$ProjectName$\\'\n"
@@ -608,6 +734,13 @@ class FastBuild(SingletonInstance):
         self.add_text("\t\tUsing(.Config)\n")
         self.add_text("\t\t.CompilerOptions + ''\n")
         self.add_text("\t\t\t + ' /wd4710' // function not inlined \n")
+
+        # add additional include folder for dependent modules
+        for module_name in module.dependent_module_names:
+            dependent_module = self.modules[module_name]
+            for include_path in dependent_module.additional_include_paths:
+                self.add_text(f"\t\t\t + ' /I\"{include_path}\"' \n")
+
         self.add_text(
             "\t\t.OutputPath + '\\$PlatformInfo$-$ArchInfo$-$CompilerInfo$-$Config$\\'\n"
         )
@@ -654,6 +787,19 @@ class FastBuild(SingletonInstance):
 
         self.add_text("\t\t\t.LinkerOutput = '$OutputPath$\\$ProjectName$.exe'\n")
         self.add_text("\t\t\t.LinkerOptions + ' /SUBSYSTEM:CONSOLE'\n")
+
+        """ override linker options """
+        # add .lib path ($OutputPath$)
+        self.add_text(f"\t\t\t\t + ' /LIBPATH:\"$OutputPath$\"'\n")
+
+        # add .lib file in $OutputPath$ for all dependent modules
+        library_names: List[str] = []
+        for module_name in module.dependent_module_names:
+            library_names.append(f"{module_name}.lib")
+        library_names = " ".join(library_names)
+
+        if len(library_names) > 0:
+            self.add_text(f"\t\t\t\t + ' {library_names}'\n")
 
         self.add_text("\t\t}\n")
 
@@ -708,9 +854,53 @@ class FastBuild(SingletonInstance):
 
         return
 
-    def generate_bff_file(self, build_conf: BuildConf):
-        # looping module generate
+    def construct_build_graph(self) -> List[str]:
+        # find executable and construct list of module name
+        module_names: List[str] = []
+        executable_modules: List[str] = []
         for name, module in self.modules.items():
+            if module.is_executable == True:
+                executable_modules.append(name)
+            else:
+                module_names.append(name)
+
+        if len(executable_modules) > 1:
+            Logger.instance().info(f"[ERROR] more than one executable module!")
+            raise RuntimeError()
+
+        # calculate dependency costs
+        module_dep_costs: Dict[str, int] = {}
+        for module_name in module_names:
+            module = self.modules.get(module_name, None)
+
+            # calculate dep costs
+            # @todo - need to calculate recursive dep costs
+            cost = len(module.dependent_module_names)
+
+            module_dep_costs[module_name] = cost
+
+        # sort by dep costs
+        ordered_modules_by_dep_cost = dict(
+            sorted(module_dep_costs.items(), key=lambda item: item[1])
+        )
+
+        # construct build graph
+        build_graph: List[str] = []
+        for name, _ in ordered_modules_by_dep_cost.items():
+            build_graph.append(name)
+
+        # append last executable module
+        build_graph.append(executable_modules[0])
+
+        return build_graph
+
+    def generate_bff_file(self, build_conf: BuildConf):
+        # get build graph
+        build_graph = self.construct_build_graph()
+
+        # looping module generate
+        for module_name in build_graph:
+            module = self.modules[module_name]
             if not module.is_executable:
                 self.add_lib_module_bff(module)
             if module.is_executable:

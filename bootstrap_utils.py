@@ -7,7 +7,6 @@ import tarfile
 import ssl
 import hashlib
 import urllib
-import json
 import getopt
 import traceback
 
@@ -16,6 +15,7 @@ from SGDPyUtil.logging_utils import Logger
 from SGDPyUtil.powershell_utils import execute_command
 from SGDPyUtil.visual_studio_utils import *
 from SGDPyUtil.main import *
+from SGDPyUtil.json_utils import *
 
 try:
     from urllib.request import urlparse
@@ -331,7 +331,7 @@ def download_and_extract_file(
     return
 
 
-def generate_lib_by_cmake(repo_path: str, src_folder_name: str):
+def generate_lib_by_cmake(repo_path: str, src_folder_name: str, cmake_cmd_args: str):
     # create dst_path
     dst_path = os.path.join(repo_path, "lib")
     if not os.path.isdir(dst_path):
@@ -344,7 +344,7 @@ def generate_lib_by_cmake(repo_path: str, src_folder_name: str):
 
     # generate build folder (visual studio project file generation)
     cmake_cmd = "cmake"
-    cmake_cmd = f"{cmake_cmd} -S . -B build"
+    cmake_cmd = f"{cmake_cmd} -S . -B build {cmake_cmd_args}"
     execute_command(cmake_cmd, True, repo_path)
 
     # get ALL_BUILD.vxcproj path
@@ -380,7 +380,7 @@ def generate_lib_by_cmake(repo_path: str, src_folder_name: str):
     copytree(lib_release_path, dst_release_path)
 
     # delete build folder
-    shutil.rmtree(build_path)
+    # shutil.rmtree(build_path)
 
     # mark lib build success by file
     mark_file_path = os.path.join(dst_path, ".build.lib.success.txt")
@@ -389,27 +389,6 @@ def generate_lib_by_cmake(repo_path: str, src_folder_name: str):
         pass
 
     return
-
-
-def read_json_data(filename: str):
-    try:
-        json_data = open(filename).read()
-    except:
-        Logger.instance().info(f"[ERROR] could not read JSON file {filename}")
-        return None
-
-    try:
-        data = json.loads(json_data)
-    except:
-        Logger.instance().info(f"[ERROR] could not parse JSON document")
-        return None
-
-    return data
-
-
-def write_json_data(data, filename):
-    with open(filename, "w") as outfile:
-        json.dump(data, outfile)
 
 
 def log_libraries(data):
@@ -537,6 +516,10 @@ def bootstrap_main(cwd: str, argv):
     opt_clean_archives = False
     list_libraries = False
     create_repo_snapshots = False
+
+    # deps (dump as deps.json)
+    deps_paths = []
+    deps_libs = []
 
     BASE_DIR = BootstrapGlobal.instance().BASE_DIR
     SRC_DIR = BootstrapGlobal.instance().SRC_DIR
@@ -706,6 +689,21 @@ def bootstrap_main(cwd: str, argv):
 
         # get the src folder name
         src = source.get("src", "src")
+        # get cmake arguments
+        cmake_args = source.get("cmake_args", "")
+
+        # get deps
+        deps = source.get("deps", None)
+        if not deps is None:
+            libs = deps.get("libs", None)
+            if not libs is None:
+                for lib in libs:
+                    deps_libs.append(lib)
+
+            lib_paths = deps.get("paths", None)
+            if not lib_paths is None:
+                for lib_path in lib_paths:
+                    deps_paths.append(lib_path)
 
         if (skip_libs) and (name in skip_libs):
             continue
@@ -888,7 +886,7 @@ def bootstrap_main(cwd: str, argv):
                         clone_repository(src_type, src_url, name, revision)
 
                         # build library
-                        generate_lib_by_cmake(lib_dir, src)
+                        generate_lib_by_cmake(lib_dir, src, cmake_args)
 
                         if create_repo_snapshots:
                             Logger.instance().info(
@@ -938,7 +936,7 @@ def bootstrap_main(cwd: str, argv):
                             clone_repository(src_type, src_url, name, revision, True)
 
                             # build library
-                            generate_lib_by_cmake(lib_dir, src)
+                            generate_lib_by_cmake(lib_dir, src, cmake_args)
                         else:
                             raise
 
@@ -978,5 +976,16 @@ def bootstrap_main(cwd: str, argv):
             Logger.instance().info(f"[LOG] {failed_library}")
         Logger.instance().info("[LOG]***************************************")
         return -1
+
+    # dump deps.json
+    if len(deps_libs) > 0:
+        deps_libs = set(deps_libs)
+        deps_paths = set(deps_paths)
+
+        deps_data = {}
+        deps_data["libs"] = list(deps_libs)
+        deps_data["paths"] = list(deps_paths)
+
+        write_json_data(deps_data, os.path.join(SRC_DIR, "deps.json"))
 
     Logger.instance().info("[LOG] Finished")
