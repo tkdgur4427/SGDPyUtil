@@ -331,6 +331,21 @@ def download_and_extract_file(
     return
 
 
+def generate_include_header_only(repo_path: str, src_folder_name: str):
+    # create dst path
+    dst_path = os.path.join(repo_path, "include", src_folder_name)
+    if not os.path.isdir(dst_path):
+        os.makedirs(dst_path)
+
+    # get src_path
+    src_path = os.path.join(repo_path, src_folder_name)
+
+    # copy src path to dst path
+    copytree(src_path, dst_path)
+
+    return
+
+
 def generate_lib_by_cmake(repo_path: str, src_folder_name: str, cmake_cmd_args: str):
     # create dst_path
     dst_path = os.path.join(repo_path, "lib")
@@ -380,7 +395,7 @@ def generate_lib_by_cmake(repo_path: str, src_folder_name: str, cmake_cmd_args: 
     copytree(lib_release_path, dst_release_path)
 
     # delete build folder
-    # shutil.rmtree(build_path)
+    shutil.rmtree(build_path)
 
     # mark lib build success by file
     mark_file_path = os.path.join(dst_path, ".build.lib.success.txt")
@@ -691,6 +706,8 @@ def bootstrap_main(cwd: str, argv):
         src = source.get("src", "src")
         # get cmake arguments
         cmake_args = source.get("cmake_args", "")
+        # get header_only options
+        is_header_only = source.get("header_only", False)
 
         # get deps
         deps = source.get("deps", None)
@@ -886,7 +903,10 @@ def bootstrap_main(cwd: str, argv):
                         clone_repository(src_type, src_url, name, revision)
 
                         # build library
-                        generate_lib_by_cmake(lib_dir, src, cmake_args)
+                        if is_header_only:
+                            generate_include_header_only(lib_dir, src)
+                        else:
+                            generate_lib_by_cmake(lib_dir, src, cmake_args)
 
                         if create_repo_snapshots:
                             Logger.instance().info(
@@ -936,7 +956,10 @@ def bootstrap_main(cwd: str, argv):
                             clone_repository(src_type, src_url, name, revision, True)
 
                             # build library
-                            generate_lib_by_cmake(lib_dir, src, cmake_args)
+                            if is_header_only:
+                                generate_include_header_only(lib_dir, src)
+                            else:
+                                generate_lib_by_cmake(lib_dir, src, cmake_args)
                         else:
                             raise
 
