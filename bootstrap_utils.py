@@ -332,16 +332,51 @@ def download_and_extract_file(
 
 
 def generate_include_header_only(repo_path: str, src_folder_name: str):
-    # create dst path
-    dst_path = os.path.join(repo_path, "include", src_folder_name)
-    if not os.path.isdir(dst_path):
-        os.makedirs(dst_path)
+    # if src_folder_name is ".", it means root repository
+    is_root = False if src_folder_name != "." else True
 
     # get src_path
-    src_path = os.path.join(repo_path, src_folder_name)
+    src_path = repo_path
+    if not is_root:
+        src_path = os.path.join(src_path, src_folder_name)
+    src_path = os.path.normpath(src_path)
 
-    # copy src path to dst path
-    copytree(src_path, dst_path)
+    # get dst_path
+    dst_path = os.path.join(repo_path, "include")
+    if not is_root:
+        dst_path = os.path.join(dst_path, src_folder_name)
+    dst_path = os.path.normpath(dst_path)
+
+    # delete and re-create dst path
+    if os.path.isdir(dst_path):
+        shutil.rmtree(dst_path)
+    os.makedirs(dst_path)
+
+    for root, _, files in os.walk(src_path):
+        for file in files:
+            ext = os.path.splitext(file)[1]
+            # filter header file type (c++)
+            if ext == ".h" or ext == ".hpp":
+                # get src_file_path
+                src_file_path = os.path.join(root, file)
+                src_file_path = os.path.normpath(src_file_path)
+
+                # get dst_file_path
+                commonprefix = os.path.commonprefix([src_path, src_file_path])
+                base_dst_file_path = src_file_path[len(commonprefix) :]
+                if base_dst_file_path.startswith("\\"):
+                    base_dst_file_path = base_dst_file_path[len("\\") :]
+                dst_file_path = os.path.join(dst_path, base_dst_file_path)
+                dst_file_path = os.path.normpath(dst_file_path)
+
+                # get dst_file_dir
+                dst_file_dir = os.path.dirname(dst_file_path)
+
+                # try to make dir
+                os.makedirs(dst_file_dir, exist_ok=True)
+
+                # copy target header
+                shutil.copy2(src_file_path, dst_file_path)
 
     return
 
