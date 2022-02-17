@@ -1,5 +1,7 @@
 import os
 import importlib
+import shutil
+import subprocess
 
 from enum import Enum
 from typing import List
@@ -91,6 +93,9 @@ class FastBuild(SingletonInstance):
         self.debug_library_names: List[str] = []
         self.release_library_names: List[str] = []
 
+        # build configuration
+        self.build_conf: BuildConf = None
+
         return
 
     def setup(self, output_path: str, intermediate_path: str):
@@ -132,6 +137,16 @@ class FastBuild(SingletonInstance):
         self.write_env_setup()
 
         return
+
+    def add_sym_link_to_output(self, src_path: str, dst_folder_name: str):
+        """add symbolic link which is useful e.g. adding Data folder link to Output Folder which contains .exe file"""
+        if self.build_conf != None:
+            dst_dir = self.get_output_path(self.build_conf)
+            dst_path = os.path.join(dst_dir, dst_folder_name)
+            
+            # re-create sym link
+            if not os.path.isdir(dst_path):
+                subprocess.check_call(f'mklink /J "{dst_path}" "{src_path}"', shell=True)
 
     def add_module(self, module: FBModule):
         self.modules[module.name] = module
@@ -895,6 +910,9 @@ class FastBuild(SingletonInstance):
         return build_graph
 
     def generate_bff_file(self, build_conf: BuildConf):
+        # cache build conf.
+        self.build_conf = build_conf
+
         # get build graph
         build_graph = self.construct_build_graph()
 

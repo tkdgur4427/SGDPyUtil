@@ -356,7 +356,7 @@ def generate_include_header_only(repo_path: str, src_folder_name: str):
         for file in files:
             ext = os.path.splitext(file)[1]
             # filter header file type (c++)
-            if ext == ".h" or ext == ".hpp":
+            if ext == ".h" or ext == ".hpp" or ext == ".inl":
                 # get src_file_path
                 src_file_path = os.path.join(root, file)
                 src_file_path = os.path.normpath(src_file_path)
