@@ -143,10 +143,12 @@ class FastBuild(SingletonInstance):
         if self.build_conf != None:
             dst_dir = self.get_output_path(self.build_conf)
             dst_path = os.path.join(dst_dir, dst_folder_name)
-            
+
             # re-create sym link
             if not os.path.isdir(dst_path):
-                subprocess.check_call(f'mklink /J "{dst_path}" "{src_path}"', shell=True)
+                subprocess.check_call(
+                    f'mklink /J "{dst_path}" "{src_path}"', shell=True
+                )
 
     def add_module(self, module: FBModule):
         self.modules[module.name] = module
@@ -461,7 +463,9 @@ class FastBuild(SingletonInstance):
         )  # require const only usage of string literals (VS2013+)
         self.add_text("\t\t + .AdditionalWarnings\n")  # see above
         self.add_text("\t\t + ' /fp:fast'\n")  # specifies floating-point behavior
-        self.add_text("\t\t + ' /D\"WIN32_LEAN_AND_MEAN\" /D_WIN32 /D__WINDOWS__'\n")
+        self.add_text(
+            '\t\t + \' /D"WIN32_LEAN_AND_MEAN" /D"_WIN32" /D"__WINDOWS__"\'\n'
+        )
         self.add_text(
             "\t\t + ' /D\"_CRT_SECURE_NO_WARNINGS\"'\n"
         )  # dont warn about unsafe functions
