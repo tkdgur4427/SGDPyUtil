@@ -332,6 +332,11 @@ def download_and_extract_file(
 
 
 def generate_include_header_only(repo_path: str, src_folder_name: str):
+    generate_include_folder(repo_path, src_folder_name)
+    return
+
+
+def generate_include_folder(repo_path: str, src_folder_name: str):
     # if src_folder_name is ".", it means root repository
     is_root = False if src_folder_name != "." else True
 
@@ -412,10 +417,50 @@ def generate_lib_by_cmake(repo_path: str, src_folder_name: str, cmake_cmd_args: 
     execute_command(build_cmd_debug, True, msbuild_path)
     execute_command(build_cmd_release, True, msbuild_path)
 
+    # if any include folder is generated, apply generated include folder
+    src_include_dir = os.path.join(build_path, "include")
+    src_include_dir = os.path.normpath(src_include_dir)
+    dst_include_dir = os.path.join(repo_path, "include")
+    dst_include_dir = os.path.normpath(dst_include_dir)
+    if os.path.isdir(src_include_dir):
+        for root, _, files in os.walk(src_include_dir):
+            for file in files:
+                # get src_file_path
+                src_file_path = os.path.join(root, file)
+                src_file_path = os.path.normpath(src_file_path)
+
+                # get dst_file_path
+                commonprefix = os.path.commonprefix([src_include_dir, src_file_path])
+                base_dst_file_path = src_file_path[len(commonprefix) :]
+                if base_dst_file_path.startswith("\\"):
+                    base_dst_file_path = base_dst_file_path[len("\\") :]
+                dst_file_path = os.path.join(dst_include_dir, base_dst_file_path)
+                dst_file_path = os.path.normpath(dst_file_path)
+
+                # get dst_file_dir
+                dst_file_dir = os.path.dirname(dst_file_path)
+
+                # try to make dir
+                os.makedirs(dst_file_dir, exist_ok=True)
+
+                # copy target header
+                shutil.copy2(src_file_path, dst_file_path)
+
     # move generated .lib to folder lib
     lib_path = os.path.join(build_path, src_folder_name)
     lib_debug_path = os.path.join(lib_path, "Debug")
     lib_release_path = os.path.join(lib_path, "Release")
+
+    # try to check whether debug/release path exists
+    if not os.path.isdir(lib_debug_path):
+        # if not exist, redirect to lib path
+        lib_path = os.path.join(build_path, "lib")
+        if os.path.isdir(lib_path):
+            lib_debug_path = os.path.join(lib_path, "Debug")
+            lib_release_path = os.path.join(lib_path, "Release")
+        else:
+            Logger.instance().info(f"[ERROR] failed to find library file")
+            return
 
     # process Debug
     dst_debug_path = os.path.join(dst_path, "Debug")
@@ -429,8 +474,16 @@ def generate_lib_by_cmake(repo_path: str, src_folder_name: str, cmake_cmd_args: 
         os.mkdir(dst_release_path)
     copytree(lib_release_path, dst_release_path)
 
+    # process bin folder
+    dst_bin_path = os.path.join(repo_path, "bin")
+    src_bin_path = os.path.join(build_path, "bin")
+    if os.path.isdir(src_bin_path):
+        if not os.path.isdir(dst_bin_path):
+            os.mkdir(dst_bin_path)
+        copytree(src_bin_path, dst_bin_path)
+
     # delete build folder
-    shutil.rmtree(build_path)
+    # shutil.rmtree(build_path)
 
     # mark lib build success by file
     mark_file_path = os.path.join(dst_path, ".build.lib.success.txt")
@@ -743,6 +796,10 @@ def bootstrap_main(cwd: str, argv):
         cmake_args = source.get("cmake_args", "")
         # get header_only options
         is_header_only = source.get("header_only", False)
+        # get generate_include_folder_from_src ption
+        is_generate_include_folder_from_src = source.get(
+            "generate_include_folder_from_src", False
+        )
 
         # get deps
         deps = source.get("deps", None)
@@ -941,6 +998,8 @@ def bootstrap_main(cwd: str, argv):
                         if is_header_only:
                             generate_include_header_only(lib_dir, src)
                         else:
+                            if is_generate_include_folder_from_src:
+                                generate_include_folder(lib_dir, src)
                             generate_lib_by_cmake(lib_dir, src, cmake_args)
 
                         if create_repo_snapshots:
@@ -994,6 +1053,8 @@ def bootstrap_main(cwd: str, argv):
                             if is_header_only:
                                 generate_include_header_only(lib_dir, src)
                             else:
+                                if is_generate_include_folder_from_src:
+                                    generate_include_folder(lib_dir, src)
                                 generate_lib_by_cmake(lib_dir, src, cmake_args)
                         else:
                             raise

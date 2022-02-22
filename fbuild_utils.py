@@ -240,6 +240,47 @@ class FastBuild(SingletonInstance):
 
         return base_include_paths
 
+    def setup_third_libraries_bin_folder(self, thrid_library_path):
+        """copy third libraries' binary folder to Output folder"""
+
+        # get src path
+        src_path = os.path.join(thrid_library_path, "src")
+
+        # get dest path
+        dst_path = self.get_output_path(self.build_conf)
+
+        # get configuration name
+        conf_name = "Debug"
+        if self.build_conf == BuildConf.RELEASE or self.build_conf == BuildConf.PROFILE:
+            conf_name = "Release"
+
+        for dir in self.third_library_paths:
+            bin_path = os.path.join(dir, "bin")
+
+            # add bin path
+            if not os.path.isdir(bin_path):
+                continue
+
+            # get the bin path
+            bin_path = os.path.join(bin_path, conf_name)
+            if os.path.isdir(bin_path):
+                for root, _, files in os.walk(bin_path):
+                    for file in files:
+                        ext = os.path.splitext(file)[1]
+                        if ext == ".dll" or ext == ".pdb":
+                            # get src_file_path
+                            src_file_path = os.path.join(root, file)
+                            src_file_path = os.path.normpath(src_file_path)
+
+                            # get dst_file_path
+                            dst_file_path = os.path.join(dst_path, file)
+                            dst_file_path = os.path.normpath(dst_file_path)
+
+                            # copy file
+                            shutil.copy2(src_file_path, dst_file_path)
+
+        return
+
     def setup_third_libraries(self, third_library_path: str):
         # get src path
         src_path = os.path.join(third_library_path, "src")
@@ -494,7 +535,7 @@ class FastBuild(SingletonInstance):
         self.add_text('\t\t + \' /OUT:"%2" "%1"\'\n')
         self.add_text("\t\t + ' /DEBUG'\n")  # creates debugging information
         self.add_text(
-            "\t\t + ' /IGNORE:4001'\n"
+            "\t\t + ' /IGNORE:4001 /IGNORE:4099'\n"
         )  # dont complain about linking libs only
         # .CompilerDebugOptimizations
         self.add_text("\t.CompilerDebugOptimizations = ''\n")
@@ -604,6 +645,8 @@ class FastBuild(SingletonInstance):
         self.add_text(
             "\t\t + ' libcmtd.lib libucrtd.lib libvcruntimed.lib kernel32.lib'\n"
         )
+        # std library <vector, map, ...>
+        self.add_text("\t\t + ' msvcprtd.lib'\n")
 
         # join third_library's library name
         debug_lib_list = " ".join(self.debug_library_names)
@@ -630,6 +673,8 @@ class FastBuild(SingletonInstance):
         self.add_text(
             "\t\t + ' libcmt.lib libucrt.lib libvcruntime.lib kernel32.lib'\n"
         )
+        # std library <vector, map, ...>
+        self.add_text("\t\t + ' msvcprt.lib'\n")
 
         # join third_library's library name
         release_lib_list = " ".join(self.release_library_names)
