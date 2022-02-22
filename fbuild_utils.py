@@ -497,6 +497,9 @@ class FastBuild(SingletonInstance):
         # self.add_text("\t\t + ' /WX'\n")                # treat warning as error
         # self.add_text("\t\t + ' /TP'\n")                # compile as C++
         self.add_text(
+            "\t\t + ' /EHsc'\n"
+        )  # warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
+        self.add_text(
             "\t\t + ' /Zc:inline'\n"
         )  # remove unreferenced COMDATs at compile time (VS2013.2+)
         self.add_text(
