@@ -1,0 +1,445 @@
+from lib2to3.pytree import Base
+import os
+import subprocess
+import shutil
+
+from enum import Enum
+from string import Template
+from typing import Dict
+
+from SGDPyUtil.logging_utils import Logger
+from SGDPyUtil.singleton_utils import SingletonInstance
+from SGDPyUtil.json_utils import *
+from SGDPyUtil.main import GlobalContext
+
+
+class UnrealEnvContext(SingletonInstance):
+    def __init__(self):
+        # unreal engine source directory
+        self.unreal_path = None
+        # GenerateProjectFiles.bat path for unreal_path
+        self.generate_project_file_path = None
+        # current working plugin path
+        self.curr_working_plugin_path = None
+
+        # try to load unreal_setting.json
+        self.setting_path = os.path.join(
+            GlobalContext.instance().root_dir, "unreal_setting.json"
+        )
+        if os.path.exists(self.setting_path):
+            # read unreal_setting.json
+            json_data = read_json_data(self.setting_path)
+
+            # parsing the data
+            self.unreal_path = json_data.get("unreal_path", None)
+            self.generate_project_file_path = json_data.get(
+                "generate_project_file_path", None
+            )
+            self.curr_working_plugin_path = json_data.get(
+                "curr_working_plugin_path", None
+            )
+
+            # update settings
+            self.update_settings()
+
+        return
+
+    def update_settings(self):
+        json_data = {}
+
+        # generate json data
+        if self.unreal_path != None:
+            json_data["unreal_path"] = self.unreal_path
+        if self.generate_project_file_path != None:
+            json_data["generate_project_file_path"] = self.generate_project_file_path
+        if self.curr_working_plugin_path != None:
+            json_data["curr_working_plugin_path"] = self.curr_working_plugin_path
+
+        write_json_data(json_data, self.setting_path)
+
+        # check whether we have symlink of SGDUnreal to unreal source path
+        # @todo - need to refactor static plugin name
+        src_plugin_path = os.path.abspath(".")
+        dst_plugin_path = os.path.join(self.curr_working_plugin_path, "SGDUnreal")
+        if not os.path.isdir(dst_plugin_path):
+            subprocess.check_call(
+                f'mklink /J "{dst_plugin_path}" "{src_plugin_path}"', shell=True
+            )
+
+        Logger.instance().info(f"[UnrealEnvContext] update unreal environment settings")
+
+        return
+
+    def setup(self, unreal_path: str):
+        self.unreal_path = unreal_path
+
+        # derive generate_project_file_path
+        self.generate_project_file_path = os.path.normpath(
+            os.path.join(unreal_path, "GenerateProjectFile.bat")
+        )
+
+        # derive curr_working_plugin_path
+        self.curr_working_plugin_path = os.path.normpath(
+            os.path.join(self.unreal_path, "Engine", "Plugins")
+        )
+        return
+
+
+class UnrealClassType(Enum):
+    RAW = 0
+    UOBJECT = 1
+    ACTOR = 2
+
+
+class UnrealProgrammerAssistantContext(SingletonInstance):
+    def __init__(self):
+        # Plugin
+        self.plugin_name = None
+        self.plugin_path = None
+
+        # Module
+        self.module_name = None
+        self.module_path = None
+
+        # Class
+        self.class_name = None
+        self.class_path = None
+        self.class_type: UnrealClassType = UnrealClassType.RAW
+
+
+class SourceGenerator:
+    def __init__(self, name: str, directory: str):
+        self.name = name
+        self.directory = os.path.normpath(os.path.join(directory, self.name))
+
+    def execute_generated_project_files(self):
+        file_path = UnrealEnvContext.instance().generate_project_file_path
+        if not os.path.exists(file_path):
+            Logger.instance().info(
+                f"[ERROR] GenerateProjectFiles.bat is failed to find! [{file_path}]"
+            )
+            return
+
+        # exceute GenerateProjectFiles.bat
+        subprocess.check_call(file_path)
+
+
+class BaseDescriptor:
+    def __init__(self):
+        self.json_object = {}
+
+
+class PluginDescriptor(BaseDescriptor):
+    def __init__(self, plugin_name):
+        super().__init__()
+
+        self.plugin_name = plugin_name
+        self.json_object.setdefault("FileVersion", 3)
+        self.json_object.setdefault("Version", 1)
+        self.json_object.setdefault("VersionName", "1.0")
+        self.json_object.setdefault("FriendlyName", self.plugin_name)
+        self.json_object.setdefault("Category", "Beaver Lab")
+        self.json_object.setdefault("EnabledByDefault", False)
+        self.json_object.setdefault("CanContainContent", True)
+
+    def save(self, dir: str):
+        file_name = f"{self.plugin_name}.uplugin"
+        file_path = os.path.join(dir, file_name)
+        write_json_data(self.json_object, file_path)
+
+
+class PluginGenerator(SourceGenerator):
+    def __init__(self, plugin_name: str, plugin_directory: str):
+        super().__init__(plugin_name, plugin_directory)
+
+    def generate(self):
+        # generate directory (if exists, remove directory and re-create directory)
+        if os.path.isdir(self.directory):
+            shutil.rmtree(self.directory)
+        os.mkdir(self.directory)
+
+        # generate 'Source' folder
+        source_folder_path = os.path.join(self.directory, "Source")
+        os.mkdir(source_folder_path)
+
+        # generate 'Content' folder
+        content_folder_path = os.path.join(self.directory, "Content")
+        os.mkdir(content_folder_path)
+
+        # generate 'Config'
+        config_folder_path = os.path.join(self.directory, "Config")
+        os.mkdir(config_folder_path)
+
+        # generate .uplugin file
+        plugin_descriptor = PluginDescriptor(self.name)
+        plugin_descriptor.save(self.directory)
+
+        # execute GenerateProjectFile.bat
+        super().execute_generated_project_files()
+
+
+# Unreal Build.cs file's string template
+build_cs_template = """
+using UnrealBuildTool;
+
+public class ${ModuleName} : ModuleRules
+{
+    public ${ModuleName}(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PublicDependencyModuleNames.AddRange(
+			new string[]
+            {
+                "Core",
+                "CoreUObject"
+            });
+
+        PrivateDependencyModuleNames.AddRange(
+            new string[]
+            {
+                
+            });
+
+        PublicIncludePaths.AddRange(
+			new string[]
+            {
+                
+            });
+
+        PrivateIncludePaths.AddRange(
+            new string[]
+            {
+                
+            });        
+    }
+}
+"""
+
+# Unreal module cpp string template
+module_cpp_template = """
+#include "${ModuleName}.h"
+
+#define LOCTEXT_NAMESPACE "${ModuleName}"
+
+DEFINE_LOG_CATEGORY(${ModuleName})
+
+IMPLEMENT_MODULE(F${ModuleName}Module, ${ModuleName});
+
+void F${ModuleName}Module::StartupModule()
+{
+	UE_LOG(${ModuleName}, Log, TEXT("F${ModuleName}Module: Log Started"));
+}
+
+void F${ModuleName}Module::ShutdownModule()
+{
+	UE_LOG(${ModuleName}, Log, TEXT("F${ModuleName}Module: Log Ended"));
+}
+
+#undef LOCTEXT_NAMESPACE
+"""
+
+# unreal  module header string template
+module_header_template = """
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Modules/ModuleManager.h"
+
+DECLARE_LOG_CATEGORY_EXTERN(${ModuleName}, All, All)
+
+class F${ModuleName}Module : public FDefaultModuleImpl
+{
+public:
+	virtual void StartupModule() override;
+	virtual void ShutdownModule() override;
+};
+"""
+
+
+class ModuleGenerator(SourceGenerator):
+    def __init__(self, module_name: str, module_directory: str):
+        super().__init__(module_name, module_directory)
+
+    def generate(self):
+        # create directory
+        if os.path.isdir(self.directory):
+            shutil.rmtree(self.directory)
+        os.mkdir(self.directory)
+
+        # create conversions
+        conversions = dict(ModuleName=self.name)
+
+        # generate build.cs file
+        build_cs = Template(build_cs_template)
+        build_cs = build_cs.safe_substitute(conversions)
+
+        cs_file_path = f"{self.name}.Build.cs"
+        cs_file_path = os.path.join(self.directory, cs_file_path)
+
+        with open(cs_file_path, "w+") as content:
+            content.writelines(build_cs)
+
+        # generate Public/Private folders
+        os.mkdir(os.path.join(self.directory, "Public"))
+        os.mkdir(os.path.join(self.directory, "Private"))
+
+        # generate module cpp files (.h/.cpp)
+        header_file_path = f"{self.name}.h"
+        header_file_path = os.path.join(self.directory, header_file_path)
+
+        cpp_file_path = f"{self.name}.cpp"
+        cpp_file_path = os.path.join(self.directory, cpp_file_path)
+
+        module_header = Template(module_header_template)
+        module_cpp = Template(module_cpp_template)
+
+        module_header.safe_substitute(conversions)
+        module_cpp.safe_substitute(conversions)
+
+        with open(header_file_path, "w+") as content:
+            content.writelines(module_header)
+
+        with open(cpp_file_path, "w+") as content:
+            content.writelines(module_cpp)
+
+
+actor_class_header_template = """
+#pragma once
+
+#include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "GameFramework/Actor.h"
+
+#include "${ClassName}.generated.h"
+
+DECLARE_LOG_CATEGORY_EXTERN(${ClassName}, All, All)
+
+UCLASS()
+class A${ClassName} : public AActor
+{
+	GENERATED_UCLASS_BODY()
+};
+"""
+
+actor_class_cpp_template = """
+#include "${ClassName}.h"
+
+#define LOCTEXT_NAMESPACE "${ClassName}"
+DEFINE_LOG_CATEGORY(${ClassName})
+
+//////////////////////////////////////////////////////////////////////////
+// A${ClassName}
+
+A${ClassName}::A${ClassName}(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+
+}
+
+void Test_${ClassName}(UWorld* InWorld, bool Next)
+{
+	
+}
+
+#undef LOCTEXT_NAMESPACE
+"""
+
+raw_class_header_template = """
+#pragma once
+
+#include "CoreMinimal.h"
+
+DECLARE_LOG_CATEGORY_EXTERN(${ClassName}, All, All)
+
+class F${ClassName}
+{
+public:	
+};
+"""
+
+raw_class_cpp_template = """
+#include "${ClassName}.h"
+
+#define LOCTEXT_NAMESPACE "${ClassName}"
+DEFINE_LOG_CATEGORY(${ClassName})
+
+/////////////////////////////////////////////////////
+// F${ClassName}
+
+#undef LOCTEXT_NAMESPACE
+"""
+
+uobject_class_header_template = """
+#pragma once
+
+#include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "UObject/UObject.h"
+#include "${ClassName}.generated.h"
+
+DECLARE_LOG_CATEGORY_EXTERN(${ClassName}, All, All)
+
+UCLASS(MinimalAPI)
+class U${ClassName} : public UObject
+{
+	GENERATED_UCLASS_BODY()
+};
+"""
+
+uobject_class_cpp_template = """
+#include "${ClassName}.h"
+
+#define LOCTEXT_NAMESPACE "${ClassName}"
+DEFINE_LOG_CATEGORY(${ClassName})
+
+//////////////////////////////////////////////////////////////////////////
+// U${ClassName}
+
+U${ClassName}::U${ClassName}(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+}
+
+#undef LOCTEXT_NAMESPACE
+"""
+
+
+class ClassGenerator(SourceGenerator):
+    def __init__(
+        self, class_type: UnrealClassType, class_name: str, class_directory: str
+    ):
+        super().__init__(class_name, class_directory)
+        self.type = class_type
+
+    def generate(self):
+        # get header/cpp file path
+        header_file_path = f"{self.name}.h"
+        header_file_path = os.path.join(self.directory, header_file_path)
+
+        cpp_file_path = f"{self.name}.cpp"
+        cpp_file_path = os.path.join(self.directory, cpp_file_path)
+
+        # get conversion set
+        conversions = dict(ClassName=self.name)
+
+        # get header/cpp content
+        header_content = None
+        cpp_content = None
+        if self.type == UnrealClassType.RAW:
+            header_content = Template(raw_class_header_template)
+            cpp_content = Template(raw_class_cpp_template)
+        elif self.type == UnrealClassType.UOBJECT:
+            header_content = Template(uobject_class_header_template)
+            cpp_content = Template(uobject_class_cpp_template)
+        elif self.type == UnrealClassType.ACTOR:
+            header_content = Template(actor_class_header_template)
+            cpp_content = Template(actor_class_cpp_template)
+
+        # safe convert content with class name
+        header_content = header_content.safe_substitute(conversions)
+        cpp_content = cpp_content.safe_substitute(conversions)
+
+        # finally write the contents (.h/.cpp)
+        with open(header_file_path, "w+") as content:
+            content.writelines(header_content)
+        with open(cpp_file_path, "w+") as content:
+            content.writelines(cpp_content)

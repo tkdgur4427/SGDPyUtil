@@ -3,6 +3,13 @@ import os
 import shutil
 
 import SGDPyUtil.powershell_utils as powershell_utils
+from SGDPyUtil.singleton_utils import SingletonInstance
+
+
+class GlobalContext(SingletonInstance):
+    def __init__(self):
+        # root directory
+        self.root_dir = os.path.normpath(os.path.abspath("."))
 
 
 def get_data_path(is_executing_from_kiwoom=False):
@@ -54,7 +61,7 @@ def get_python_x86_path(py_version: str) -> str:
 
 def get_python_x64_path(py_version: str) -> str:
     python_x64_path = os.path.join(
-        os.environ["ProgramFiles"], f"Python{py_version}", "python.exe"
+        os.environ["PROGRAMW6432"], f"Python{py_version}", "python.exe"
     )
     return python_x64_path
 

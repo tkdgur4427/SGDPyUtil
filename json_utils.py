@@ -20,4 +20,4 @@ def read_json_data(filename: str):
 
 def write_json_data(data, filename):
     with open(filename, "w") as outfile:
-        json.dump(data, outfile)
+        json.dump(data, outfile, indent=4)
