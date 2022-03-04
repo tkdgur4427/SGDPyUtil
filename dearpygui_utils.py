@@ -103,3 +103,49 @@ class DearPyGuiApp(SingletonInstance):
 
     def destroy_app(self):
         dpg.destroy_context()
+
+
+"""
+    Helper Module Functions
+"""
+
+
+def input_text_search_directory_module(
+    on_selected_file_path_callback: FunctionObject,
+    remaining_space,
+    horizontal_spacing=2,
+):
+    """
+    on_selected_file_path_callback: def callback(file_path): ...
+    """
+    with dpg.group(horizontal=True, horizontal_spacing=horizontal_spacing):
+        button_size = 30
+        input_text_size = remaining_space - button_size - horizontal_spacing
+        input_text = dpg.add_input_text(readonly=True, width=input_text_size)
+        # create callback for button
+        def on_clicked_file_dialog():
+            # finsihed to select the path
+            def on_selected_file_path(sender, app_data):
+                # get the file path
+                file_path_name = app_data.get("file_path_name", None)
+                if file_path_name != None:
+                    # update kwargs
+                    on_selected_file_path_callback.kwargs["file_path"] = file_path_name
+                    # execute callback function
+                    on_selected_file_path_callback.call()
+
+            # popup to select the path
+            dpg.add_file_dialog(
+                directory_selector=True,
+                modal=True,
+                width=500,
+                height=300,
+                callback=on_selected_file_path,
+            )
+
+        dpg.add_button(
+            label="...",
+            callback=on_clicked_file_dialog,
+            width=button_size,
+        )
+    return input_text

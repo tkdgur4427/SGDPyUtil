@@ -11,6 +11,8 @@ from SGDPyUtil.logging_utils import Logger
 from SGDPyUtil.singleton_utils import SingletonInstance
 from SGDPyUtil.json_utils import *
 from SGDPyUtil.main import GlobalContext
+from SGDPyUtil.event_utils import *
+from SGDPyUtil.dearpygui_utils import *
 
 
 class UnrealEnvContext(SingletonInstance):
@@ -443,3 +445,443 @@ class ClassGenerator(SourceGenerator):
             content.writelines(header_content)
         with open(cpp_file_path, "w+") as content:
             content.writelines(cpp_content)
+
+
+"""
+    DearPyGui UI functions
+"""
+
+
+def SGDUnreal_project_setup():
+    # get parent tag
+    parent_tag = DearPyGuiApp.instance().primary_window_tag
+
+    # input_text variables
+    unreal_src_path_input_text = None
+    plugin_path_input_text = None
+    generate_project_file_path_input_text = None
+
+    # set width/height for each row
+    row_width = 450
+    row_height = 30
+
+    # SGDUnreal Project Setup header
+    with dpg.collapsing_header(label="SGDUnreal Project Setup", parent=parent_tag):
+        # set label width
+        label_width = 30
+
+        # set hoizontal spacing
+        horizontal_spacing = 2
+
+        # set fixed height for this setup
+        child_window_height = row_height * 4
+        with dpg.child_window(autosize_x=True, height=child_window_height):
+            # row 1
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # Unreal Source Path
+                content = "Unreal Source Path: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+
+                def on_clicked_unreal_src_path_file_dialog(*args, **kwargs):
+                    file_path_name = kwargs["file_path"]
+                    if file_path_name != None:
+                        UnrealEnvContext.instance().setup(file_path_name)
+                        # update input text
+                        dpg.set_value(
+                            unreal_src_path_input_text,
+                            UnrealEnvContext.instance().unreal_path,
+                        )
+                        dpg.set_value(
+                            plugin_path_input_text,
+                            UnrealEnvContext.instance().curr_working_plugin_path,
+                        )
+                        dpg.set_value(
+                            generate_project_file_path_input_text,
+                            UnrealEnvContext.instance().generate_project_file_path,
+                        )
+
+                callback_function = FunctionObject(
+                    on_clicked_unreal_src_path_file_dialog
+                )
+                unreal_src_path_input_text = input_text_search_directory_module(
+                    callback_function,
+                    remaining_space,
+                    horizontal_spacing,
+                )
+                if UnrealEnvContext.instance().unreal_path != None:
+                    dpg.set_value(
+                        unreal_src_path_input_text,
+                        UnrealEnvContext.instance().unreal_path,
+                    )
+
+            # row 2
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # Plugin Path
+                content = "Plugin Path: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+                with dpg.group(horizontal=True, horizontal_spacing=2):
+                    plugin_path_input_text = dpg.add_input_text(
+                        readonly=True, width=remaining_space
+                    )
+                    if UnrealEnvContext.instance().curr_working_plugin_path != None:
+                        dpg.set_value(
+                            plugin_path_input_text,
+                            UnrealEnvContext.instance().curr_working_plugin_path,
+                        )
+            # row 3
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # GenerateProjectFiles Path
+                content = "GenerateProjectFiles.bat: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+                with dpg.group(horizontal=True, horizontal_spacing=horizontal_spacing):
+                    generate_project_file_path_input_text = dpg.add_input_text(
+                        readonly=True, width=remaining_space
+                    )
+                    if UnrealEnvContext.instance().generate_project_file_path != None:
+                        dpg.set_value(
+                            generate_project_file_path_input_text,
+                            UnrealEnvContext.instance().generate_project_file_path,
+                        )
+            # row 4
+            dpg.add_spacer(height=2)
+            with dpg.group(horizontal=True, horizontal_spacing=0):
+
+                def update_unreal_env_json_settings():
+                    UnrealEnvContext.instance().update_settings()
+
+                dpg.add_spacer(width=500)
+                dpg.add_button(
+                    label="UPDATE",
+                    width=135,
+                    height=25,
+                    callback=update_unreal_env_json_settings,
+                )
+
+
+def programmer_assistant_setup():
+    # get parent tag
+    parent_tag = DearPyGuiApp.instance().primary_window_tag
+
+    # set width/height for each row
+    row_width = 450
+    row_height = 30
+
+    # set label_width
+    label_width = 20
+
+    # set hoizontal spacing
+    horizontal_spacing = 2
+
+    # input_text attributes
+    plugin_name_input_text = None
+    plugin_path_input_text = None
+
+    module_name_input_text = None
+    module_path_input_text = None
+
+    class_name_input_text = None
+    class_path_input_text = None
+
+    # programmer assistant setup
+    with dpg.collapsing_header(label="Unreal Programmer Assistant", parent=parent_tag):
+        # calculate child window height
+        child_window_height = row_height * 4
+        with dpg.child_window(autosize_x=True, height=child_window_height):
+            # plugin name (row 1)
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # Plugin Name
+                content = "Plugin Name: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+                with dpg.group(horizontal=True, horizontal_spacing=horizontal_spacing):
+                    # callback when plugin name is changed
+                    def on_changed_plugin_name(sender, app_data):
+                        UnrealProgrammerAssistantContext.instance().plugin_name = (
+                            app_data
+                        )
+
+                    plugin_name_input_text = dpg.add_input_text(
+                        width=remaining_space,
+                        callback=on_changed_plugin_name,
+                    )
+            # plugin path (row 2)
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # Plugin Path
+                content = "Plugin Path: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+
+                def on_clicked_plugin_path_file_dialog(*args, **kwargs):
+                    file_path_name = kwargs["file_path"]
+                    if file_path_name != None:
+                        UnrealProgrammerAssistantContext.instance().plugin_path = (
+                            file_path_name
+                        )
+                        # update input text
+                        dpg.set_value(
+                            plugin_path_input_text,
+                            UnrealProgrammerAssistantContext.instance().plugin_path,
+                        )
+
+                callback_function = FunctionObject(on_clicked_plugin_path_file_dialog)
+                plugin_path_input_text = input_text_search_directory_module(
+                    callback_function,
+                    remaining_space,
+                    horizontal_spacing,
+                )
+            # Apply button (row 3)
+            dpg.add_spacer(height=2)
+            with dpg.group(horizontal=True, horizontal_spacing=0):
+
+                def generate_plugin():
+                    def generate_plugin_internal():
+                        plugin_name = (
+                            UnrealProgrammerAssistantContext.instance().plugin_name
+                        )
+                        plugin_path = (
+                            UnrealProgrammerAssistantContext.instance().plugin_path
+                        )
+
+                        if not os.path.isdir(plugin_path):
+                            Logger.instance().info(
+                                f"[ERROR] failed to find plugin path! [{plugin_path}]"
+                            )
+                            return
+
+                        plugin_generator = PluginGenerator(plugin_name, plugin_path)
+                        plugin_generator.generate()
+
+                    event_task = EventTask()
+                    event_task.add_command(
+                        EventCommand(FunctionObject(generate_plugin_internal))
+                    )
+                    DearPyGuiApp.instance().add_task(event_task)
+
+                dpg.add_spacer(width=441)
+                dpg.add_button(
+                    label="GENERATE",
+                    width=135,
+                    height=25,
+                    callback=generate_plugin,
+                )
+
+        # row 2 - Module
+        with dpg.child_window(autosize_x=True, height=child_window_height):
+            # module name (row 1)
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # Module Name
+                content = "Module Name: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+                with dpg.group(horizontal=True, horizontal_spacing=horizontal_spacing):
+                    # callback when module name is changed
+                    def on_changed_module_name(sender, app_data):
+                        UnrealProgrammerAssistantContext.instance().module_name = (
+                            app_data
+                        )
+
+                    module_name_input_text = dpg.add_input_text(
+                        width=remaining_space,
+                        callback=on_changed_module_name,
+                    )
+            # module path (row 2)
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # Module Path
+                content = "Module Path: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+
+                def on_clicked_module_path_file_dialog(*args, **kwargs):
+                    file_path_name = kwargs["file_path"]
+                    if file_path_name != None:
+                        UnrealProgrammerAssistantContext.instance().module_path = (
+                            file_path_name
+                        )
+                        # update input text
+                        dpg.set_value(
+                            module_path_input_text,
+                            UnrealProgrammerAssistantContext.instance().module_path,
+                        )
+
+                callback_function = FunctionObject(on_clicked_module_path_file_dialog)
+                module_path_input_text = input_text_search_directory_module(
+                    callback_function,
+                    remaining_space,
+                    horizontal_spacing,
+                )
+
+            # Radios & Generate button (row 3)
+            dpg.add_spacer(height=2)
+            with dpg.group(horizontal=True, horizontal_spacing=0):
+                # button
+                def generate_module():
+                    def generate_module_internal():
+                        module_name = (
+                            UnrealProgrammerAssistantContext.instance().module_name
+                        )
+                        module_path = (
+                            UnrealProgrammerAssistantContext.instance().module_path
+                        )
+
+                        if not os.path.isdir(module_path):
+                            Logger.instance().info(
+                                f"[ERROR] failed to find module path! [{module_path}]"
+                            )
+                            return
+
+                        module_generator = ModuleGenerator(module_name, module_path)
+                        module_generator.generate()
+
+                    event_task = EventTask()
+                    event_task.add_command(
+                        EventCommand(FunctionObject(generate_module_internal))
+                    )
+                    DearPyGuiApp.instance().add_task(event_task)
+
+                dpg.add_spacer(width=441)
+                dpg.add_button(
+                    label="GENERATE",
+                    width=135,
+                    height=25,
+                    callback=generate_module,
+                )
+
+        # row 3 - Class
+        with dpg.child_window(autosize_x=True, height=child_window_height):
+            # class name (row 1)
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # Class Name
+                content = "Class Name: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+                with dpg.group(horizontal=True, horizontal_spacing=horizontal_spacing):
+                    # callback when class name is changed
+                    def on_changed_class_name(sender, app_data):
+                        UnrealProgrammerAssistantContext.instance().class_name = (
+                            app_data
+                        )
+
+                    class_name_input_text = dpg.add_input_text(
+                        width=remaining_space,
+                        callback=on_changed_class_name,
+                    )
+            # class path (row 2)
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # Class Path
+                content = "Class Path: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+
+                def on_clicked_class_path_file_dialog(*args, **kwargs):
+                    file_path_name = kwargs["file_path"]
+                    if file_path_name != None:
+                        UnrealProgrammerAssistantContext.instance().class_path = (
+                            file_path_name
+                        )
+                        # update input text
+                        dpg.set_value(
+                            class_path_input_text,
+                            UnrealProgrammerAssistantContext.instance().class_path,
+                        )
+
+                callback_function = FunctionObject(on_clicked_class_path_file_dialog)
+                class_path_input_text = input_text_search_directory_module(
+                    callback_function,
+                    remaining_space,
+                    horizontal_spacing,
+                )
+
+            # Apply button (row 3)
+            dpg.add_spacer(height=2)
+            with dpg.group(horizontal=True, horizontal_spacing=0):
+                # radio
+                def select_class_type(sender, app_data):
+                    class_type: UnrealClassType = (
+                        UnrealProgrammerAssistantContext.instance().class_type
+                    )
+                    if app_data == "Raw":
+                        class_type = UnrealClassType.RAW
+                    elif app_data == "UObject":
+                        class_type = UnrealClassType.UOBJECT
+                    elif app_data == "Actor":
+                        class_type = UnrealClassType.ACTOR
+
+                    def select_class_type_internal(class_type: UnrealClassType):
+                        UnrealProgrammerAssistantContext.instance().class_type = (
+                            class_type
+                        )
+
+                    event_task = EventTask()
+                    event_task.add_command(
+                        EventCommand(
+                            FunctionObject(
+                                select_class_type_internal,
+                                class_type,
+                            )
+                        )
+                    )
+                    DearPyGuiApp.instance().add_task(event_task)
+
+                dpg.add_radio_button(
+                    ("Raw", "UObject", "Actor"),
+                    callback=select_class_type,
+                    horizontal=True,
+                )
+
+                def generate_class():
+                    def generate_class_internal():
+                        class_name = (
+                            UnrealProgrammerAssistantContext.instance().class_name
+                        )
+                        class_path = (
+                            UnrealProgrammerAssistantContext.instance().class_path
+                        )
+                        class_type = (
+                            UnrealProgrammerAssistantContext.instance().class_type
+                        )
+
+                        if not os.path.isdir(class_path):
+                            Logger.instance().info(
+                                f"[ERROR] failed to find module path! [{class_path}]"
+                            )
+                            return
+
+                        class_generator = ClassGenerator(
+                            class_type, class_name, class_path
+                        )
+                        class_generator.generate()
+
+                    event_task = EventTask()
+                    event_task.add_command(
+                        EventCommand(FunctionObject(generate_class_internal))
+                    )
+                    DearPyGuiApp.instance().add_task(event_task)
+
+                dpg.add_spacer(width=251)
+                dpg.add_button(
+                    label="GENERATE",
+                    width=135,
+                    height=25,
+                    callback=generate_class,
+                )
