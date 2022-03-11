@@ -512,6 +512,7 @@ def unreal_build_cook_run():
         command_args.append(f"-Map={maps_arg}")
 
     # leave the log
+    """
     with open("unreal_cook.log", "w", encoding="utf-8") as f:
         # execute the automationtool.exe with command_args
         output = subprocess.Popen(command_args, stdout=subprocess.PIPE)
@@ -524,12 +525,15 @@ def unreal_build_cook_run():
 
     # block until it finished
     output.communicate()
+    """
 
     """write batch files"""
     # server batch file
     # we need make server batch files for maps (each map needs one separate batch file)
     maps = maps_arg.split("+")
     for map in maps:
+        # get the base name of map
+        map = map.split("/")[-1]
         server_bat_file_path = os.path.join(archive_dir_arg, f"Server_{map}.bat")
         with open(server_bat_file_path, "w+") as bat_file:
             bat_file.write(
