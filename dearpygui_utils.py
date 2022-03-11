@@ -114,6 +114,7 @@ def input_text_search_directory_module(
     on_selected_file_path_callback: FunctionObject,
     remaining_space,
     horizontal_spacing=2,
+    is_directory_only=True,
 ):
     """
     on_selected_file_path_callback: def callback(file_path): ...
@@ -135,13 +136,17 @@ def input_text_search_directory_module(
                     on_selected_file_path_callback.call()
 
             # popup to select the path
-            dpg.add_file_dialog(
-                directory_selector=True,
+            with dpg.file_dialog(
+                directory_selector=is_directory_only,
                 modal=True,
                 width=500,
                 height=300,
                 callback=on_selected_file_path,
-            )
+            ):
+                # add file filter
+                dpg.add_file_extension(
+                    "Unreal files (*.uproject){.uproject}", color=(0, 255, 255, 255)
+                )
 
         dpg.add_button(
             label="...",

@@ -19,6 +19,8 @@ class UnrealEnvContext(SingletonInstance):
     def __init__(self):
         # unreal engine source directory
         self.unreal_path = None
+        # unreal project directory
+        self.unreal_project_path = None
         # GenerateProjectFiles.bat path for unreal_path
         self.generate_project_file_path = None
         # current working plugin path
@@ -34,6 +36,7 @@ class UnrealEnvContext(SingletonInstance):
 
             # parsing the data
             self.unreal_path = json_data.get("unreal_path", None)
+            self.unreal_project_path = json_data.get("unreal_project_path", None)
             self.generate_project_file_path = json_data.get(
                 "generate_project_file_path", None
             )
@@ -52,6 +55,8 @@ class UnrealEnvContext(SingletonInstance):
         # generate json data
         if self.unreal_path != None:
             json_data["unreal_path"] = self.unreal_path
+        if self.unreal_path != None:
+            json_data["unreal_project_path"] = self.unreal_project_path
         if self.generate_project_file_path != None:
             json_data["generate_project_file_path"] = self.generate_project_file_path
         if self.curr_working_plugin_path != None:
@@ -447,6 +452,98 @@ class ClassGenerator(SourceGenerator):
             content.writelines(cpp_content)
 
 
+class UnrealCookContext(SingletonInstance):
+    def __init__(self):
+        # archive path (output directory to override)
+        self.archive_path = None
+        # map name: note that it has a form, "<Map0>+<Map1>+..."
+        self.maps_arg = None
+
+
+def unreal_build_cook_run():
+    project_arg = UnrealEnvContext.instance().unreal_project_path
+    archive_dir_arg = UnrealCookContext.instance().archive_path
+
+    if project_arg == None or archive_dir_arg == None:
+        Logger.instance().info(
+            f"argument is wrong [project arg: {project_arg}][archive_dir_arg: {archive_dir_arg}]"
+        )
+        return
+
+    # try to find AutomationTool.exe from unreal_path
+    unreal_engine_path = UnrealEnvContext.instance().unreal_path
+    automation_tool_path = os.path.join(
+        unreal_engine_path, "Engine", "Binaries", "DotNET", "AutomationTool.exe"
+    )
+    automation_tool_path = os.path.normpath(automation_tool_path)
+    if not os.path.exists(automation_tool_path):
+        Logger.instance().info(
+            f"automation tool binary doesn't exists [{automation_tool_path}]"
+        )
+        return
+
+    # construct cmd
+    command_args = [
+        f"{automation_tool_path}",
+        "BuildCookRun",
+        f'-project="{project_arg}"',
+        "-noP4",
+        "-platform=Win64",
+        "-clientconfig=Development",
+        "-serverconfig=Development",
+        "-cook",
+        "-compressed",
+        "-server",
+        "-serverplatform=Win64",
+        "-build",
+        "-stage",
+        "-pak",
+        "-bvpak",
+        "-archive",
+        f'-archivedirectory="{archive_dir_arg}"',
+        "-iterate",
+        "-utf8output",
+    ]
+
+    """add additional arguments"""
+    # map argument
+    maps_arg = UnrealCookContext.instance().maps_arg
+    if maps_arg != None:
+        command_args.append(f"-Map={maps_arg}")
+
+    # leave the log
+    with open("unreal_cook.log", "w", encoding="utf-8") as f:
+        # execute the automationtool.exe with command_args
+        output = subprocess.Popen(command_args, stdout=subprocess.PIPE)
+        while True:
+            line = output.stdout.readline()
+            if not line:
+                break
+            formatted_line = line.decode("utf-8")
+            f.write(formatted_line)
+
+    # block until it finished
+    output.communicate()
+
+    """write batch files"""
+    # server batch file
+    # we need make server batch files for maps (each map needs one separate batch file)
+    maps = maps_arg.split("+")
+    for map in maps:
+        server_bat_file_path = os.path.join(archive_dir_arg, f"Server_{map}.bat")
+        with open(server_bat_file_path, "w+") as bat_file:
+            bat_file.write(
+                f"start .\WindowsServer\CowboyServer.exe {map} -server -game -log -fullcrashdumpalways -noailogging -NOVERIFYGC -NOSTEAM"
+            )
+
+    # client batch file
+    client_bat_file_path = os.path.join(archive_dir_arg, f"Client_LocalHost.bat")
+    with open(client_bat_file_path, "w+") as bat_file:
+        bat_file.write(
+            "start .\WindowsNoEditor\Cowboy.exe 127.0.0.1 -game -noailogging -NOVERIFYGC -NOSTEAM"
+        )
+
+
 """
     DearPyGui UI functions
 """
@@ -458,6 +555,7 @@ def SGDUnreal_project_setup():
 
     # input_text variables
     unreal_src_path_input_text = None
+    unreal_project_path_input_text = None
     plugin_path_input_text = None
     generate_project_file_path_input_text = None
 
@@ -474,9 +572,9 @@ def SGDUnreal_project_setup():
         horizontal_spacing = 2
 
         # set fixed height for this setup
-        child_window_height = row_height * 4
+        child_window_height = row_height * 5
         with dpg.child_window(autosize_x=True, height=child_window_height):
-            # row 1
+            # row 0
             with dpg.group(horizontal=True):
                 remaining_space = row_width
                 # Unreal Source Path
@@ -515,6 +613,61 @@ def SGDUnreal_project_setup():
                     dpg.set_value(
                         unreal_src_path_input_text,
                         UnrealEnvContext.instance().unreal_path,
+                    )
+
+            # row 1
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # Unreal Project Path (.uproject)
+                content = "Unreal Project Path: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+
+                def on_clicked_unreal_project_path_file_dialog(*args, **kwargs):
+                    file_path_name = kwargs["file_path"]
+
+                    def on_clicked_unreal_project_path_file_dialog_internal(
+                        file_path_name: str,
+                    ):
+                        if file_path_name != None:
+                            basename = os.path.basename(file_path_name)
+                            basename_ext = os.path.splitext(basename)[1]
+                            if basename_ext == ".uproject":
+                                # update unreal_project_path
+                                UnrealEnvContext.instance().unreal_project_path = (
+                                    file_path_name
+                                )
+                                # update input text
+                                dpg.set_value(
+                                    unreal_project_path_input_text,
+                                    UnrealEnvContext.instance().unreal_project_path,
+                                )
+
+                    event_task = EventTask()
+                    event_task.add_command(
+                        EventCommand(
+                            FunctionObject(
+                                on_clicked_unreal_project_path_file_dialog_internal,
+                                file_path_name,
+                            )
+                        )
+                    )
+                    DearPyGuiApp.instance().add_task(event_task)
+
+                callback_function = FunctionObject(
+                    on_clicked_unreal_project_path_file_dialog
+                )
+                unreal_project_path_input_text = input_text_search_directory_module(
+                    callback_function,
+                    remaining_space,
+                    horizontal_spacing,
+                    is_directory_only=False,
+                )
+                if UnrealEnvContext.instance().unreal_project_path != None:
+                    dpg.set_value(
+                        unreal_project_path_input_text,
+                        UnrealEnvContext.instance().unreal_project_path,
                     )
 
             # row 2
@@ -884,4 +1037,92 @@ def programmer_assistant_setup():
                     width=135,
                     height=25,
                     callback=generate_class,
+                )
+
+
+def cooking_assistant_setup():
+    # get parent tag
+    parent_tag = DearPyGuiApp.instance().primary_window_tag
+
+    # set width/height for each row
+    row_width = 450
+    row_height = 30
+
+    # set label_width
+    label_width = 20
+
+    # set hoizontal spacing
+    horizontal_spacing = 2
+
+    # input_text attributes
+    archive_path_input_text = None
+    maps_arg_input_text = None
+
+    # programmer assistant setup
+    with dpg.collapsing_header(label="Cooker Assistant", parent=parent_tag):
+        # calculate child window height
+        child_window_height = row_height * 4
+        with dpg.child_window(autosize_x=True, height=child_window_height):
+            # archive path (row 1)
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # archive path
+                content = "Archive Path: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+
+                def on_clicked_archive_path_file_dialog(*args, **kwargs):
+                    file_path_name = kwargs["file_path"]
+                    if file_path_name != None:
+                        UnrealCookContext.instance().archive_path = file_path_name
+                        # update input text
+                        dpg.set_value(
+                            archive_path_input_text,
+                            UnrealCookContext.instance().archive_path,
+                        )
+
+                callback_function = FunctionObject(on_clicked_archive_path_file_dialog)
+                archive_path_input_text = input_text_search_directory_module(
+                    callback_function,
+                    remaining_space,
+                    horizontal_spacing,
+                )
+            # maps arg (row 2)
+            with dpg.group(horizontal=True):
+                remaining_space = row_width
+                # maps arg
+                content = "Map Arguments: "
+                content = f"{content:<{label_width}}"
+                dpg.add_text(content)
+                remaining_space = remaining_space - label_width - horizontal_spacing
+                with dpg.group(horizontal=True, horizontal_spacing=horizontal_spacing):
+                    # callback when maps arg is changed
+                    def on_changed_maps_arg(sender, app_data):
+                        UnrealCookContext.instance().maps_arg = app_data
+
+                    maps_arg_input_text = dpg.add_input_text(
+                        width=remaining_space,
+                        callback=on_changed_maps_arg,
+                    )
+            # Apply button (row 3)
+            dpg.add_spacer(height=2)
+            with dpg.group(horizontal=True, horizontal_spacing=0):
+
+                def generate_plugin():
+                    def generate_plugin_internal():
+                        unreal_build_cook_run()
+
+                    event_task = EventTask()
+                    event_task.add_command(
+                        EventCommand(FunctionObject(generate_plugin_internal))
+                    )
+                    DearPyGuiApp.instance().add_task(event_task)
+
+                dpg.add_spacer(width=441)
+                dpg.add_button(
+                    label="COOK",
+                    width=135,
+                    height=25,
+                    callback=generate_plugin,
                 )
