@@ -147,6 +147,10 @@ def input_text_search_directory_module(
                 dpg.add_file_extension(
                     "Unreal files (*.uproject){.uproject}", color=(0, 255, 255, 255)
                 )
+                # add file filter
+                dpg.add_file_extension(
+                    "bat files (*.bat){.bat}", color=(0, 255, 255, 255)
+                )
 
         dpg.add_button(
             label="...",

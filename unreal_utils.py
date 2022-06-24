@@ -13,6 +13,7 @@ from SGDPyUtil.json_utils import *
 from SGDPyUtil.main import GlobalContext
 from SGDPyUtil.event_utils import *
 from SGDPyUtil.dearpygui_utils import *
+from SGDPyUtil.powershell_utils import execute_powershell_content
 
 
 class UnrealEnvContext(SingletonInstance):
@@ -80,11 +81,6 @@ class UnrealEnvContext(SingletonInstance):
     def setup(self, unreal_path: str):
         self.unreal_path = unreal_path
 
-        # derive generate_project_file_path
-        self.generate_project_file_path = os.path.normpath(
-            os.path.join(unreal_path, "GenerateProjectFile.bat")
-        )
-
         # derive curr_working_plugin_path
         self.curr_working_plugin_path = os.path.normpath(
             os.path.join(self.unreal_path, "Engine", "Plugins")
@@ -128,7 +124,7 @@ class SourceGenerator:
             return
 
         # exceute GenerateProjectFiles.bat
-        subprocess.check_call(file_path)
+        execute_powershell_content(f"{file_path}", True)
 
 
 class BaseDescriptor:
@@ -286,27 +282,31 @@ class ModuleGenerator(SourceGenerator):
             content.writelines(build_cs)
 
         # generate Public/Private folders
-        os.mkdir(os.path.join(self.directory, "Public"))
+        public_directory = os.path.join(self.directory, "Public")
+        os.mkdir(public_directory)
         os.mkdir(os.path.join(self.directory, "Private"))
 
         # generate module cpp files (.h/.cpp)
         header_file_path = f"{self.name}.h"
-        header_file_path = os.path.join(self.directory, header_file_path)
+        header_file_path = os.path.join(public_directory, header_file_path)
 
         cpp_file_path = f"{self.name}.cpp"
-        cpp_file_path = os.path.join(self.directory, cpp_file_path)
+        cpp_file_path = os.path.join(public_directory, cpp_file_path)
 
         module_header = Template(module_header_template)
         module_cpp = Template(module_cpp_template)
 
-        module_header.safe_substitute(conversions)
-        module_cpp.safe_substitute(conversions)
+        module_header = module_header.safe_substitute(conversions)
+        module_cpp = module_cpp.safe_substitute(conversions)
 
         with open(header_file_path, "w+") as content:
             content.writelines(module_header)
 
         with open(cpp_file_path, "w+") as content:
             content.writelines(module_cpp)
+
+        # generate project files
+        self.execute_generated_project_files()
 
 
 actor_class_header_template = """
@@ -417,13 +417,20 @@ class ClassGenerator(SourceGenerator):
         super().__init__(class_name, class_directory)
         self.type = class_type
 
+        # override directory again
+        self.directory = class_directory
+
     def generate(self):
         # get header/cpp file path
         header_file_path = f"{self.name}.h"
         header_file_path = os.path.join(self.directory, header_file_path)
+        if os.path.exists(header_file_path):
+            shutil.rmtree(header_file_path)
 
         cpp_file_path = f"{self.name}.cpp"
         cpp_file_path = os.path.join(self.directory, cpp_file_path)
+        if os.path.exists(cpp_file_path):
+            shutil.rmtree(cpp_file_path)
 
         # get conversion set
         conversions = dict(ClassName=self.name)
@@ -450,6 +457,9 @@ class ClassGenerator(SourceGenerator):
             content.writelines(header_content)
         with open(cpp_file_path, "w+") as content:
             content.writelines(cpp_content)
+
+        # update the .vsproj
+        self.execute_generated_project_files()
 
 
 class UnrealCookContext(SingletonInstance):
@@ -562,6 +572,7 @@ def SGDUnreal_project_setup():
     unreal_project_path_input_text = None
     plugin_path_input_text = None
     generate_project_file_path_input_text = None
+    generate_project_files_path_input_text = None
 
     # set width/height for each row
     row_width = 450
@@ -699,15 +710,54 @@ def SGDUnreal_project_setup():
                 content = f"{content:<{label_width}}"
                 dpg.add_text(content)
                 remaining_space = remaining_space - label_width - horizontal_spacing
-                with dpg.group(horizontal=True, horizontal_spacing=horizontal_spacing):
-                    generate_project_file_path_input_text = dpg.add_input_text(
-                        readonly=True, width=remaining_space
-                    )
-                    if UnrealEnvContext.instance().generate_project_file_path != None:
-                        dpg.set_value(
-                            generate_project_file_path_input_text,
-                            UnrealEnvContext.instance().generate_project_file_path,
+
+                def on_clicked_generate_project_files_path_file_dialog(*args, **kwargs):
+                    file_path_name = kwargs["file_path"]
+
+                    def on_clicked_generate_project_files_path_file_dialog_internal(
+                        file_path_name: str,
+                    ):
+                        if file_path_name != None:
+                            basename = os.path.basename(file_path_name)
+                            basename_ext = os.path.splitext(basename)[1]
+                            if basename_ext == ".bat":
+                                # update generate_project_file_path
+                                UnrealEnvContext.instance().generate_project_file_path = (
+                                    file_path_name
+                                )
+                                # update input text
+                                dpg.set_value(
+                                    generate_project_files_path_input_text,
+                                    UnrealEnvContext.instance().generate_project_file_path,
+                                )
+
+                    event_task = EventTask()
+                    event_task.add_command(
+                        EventCommand(
+                            FunctionObject(
+                                on_clicked_generate_project_files_path_file_dialog_internal,
+                                file_path_name,
+                            )
                         )
+                    )
+                    DearPyGuiApp.instance().add_task(event_task)
+
+                callback_function = FunctionObject(
+                    on_clicked_generate_project_files_path_file_dialog
+                )
+                generate_project_files_path_input_text = (
+                    input_text_search_directory_module(
+                        callback_function,
+                        remaining_space,
+                        horizontal_spacing,
+                        is_directory_only=False,
+                    )
+                )
+                if UnrealEnvContext.instance().generate_project_file_path != None:
+                    dpg.set_value(
+                        generate_project_files_path_input_text,
+                        UnrealEnvContext.instance().generate_project_file_path,
+                    )
             # row 4
             dpg.add_spacer(height=2)
             with dpg.group(horizontal=True, horizontal_spacing=0):
